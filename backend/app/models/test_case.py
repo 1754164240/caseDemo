@@ -1,0 +1,24 @@
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+from app.db.base import Base
+
+
+class TestCase(Base):
+    __tablename__ = "test_cases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    test_point_id = Column(Integer, ForeignKey("test_points.id"), nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(Text)
+    preconditions = Column(Text)  # 前置条件
+    test_steps = Column(JSON)  # 测试步骤 [{"step": 1, "action": "...", "expected": "..."}]
+    expected_result = Column(Text)  # 预期结果
+    priority = Column(String(20))  # high, medium, low
+    test_type = Column(String(50))  # functional, performance, security, etc.
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    test_point = relationship("TestPoint", back_populates="test_cases")
+
