@@ -17,9 +17,17 @@ class TestCase(Base):
     expected_result = Column(Text)  # 预期结果
     priority = Column(String(20))  # high, medium, low
     test_type = Column(String(50))  # functional, performance, security, etc.
+
+    # 审批相关字段
+    approval_status = Column(String(20), default='pending')  # pending, approved, rejected
+    approved_by = Column(Integer, ForeignKey("users.id"))
+    approved_at = Column(DateTime(timezone=True))
+    approval_comment = Column(Text)  # 审批意见
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships
     test_point = relationship("TestPoint", back_populates="test_cases")
+    approver = relationship("User", foreign_keys=[approved_by])
 

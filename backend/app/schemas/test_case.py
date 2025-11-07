@@ -33,10 +33,23 @@ class TestCaseUpdate(BaseModel):
     test_type: Optional[str] = None
 
 
+class TestCaseApproval(BaseModel):
+    """审批操作的请求模型"""
+    approval_status: str  # approved 或 rejected
+    approval_comment: Optional[str] = None
+
+
 class TestCaseInDB(TestCaseBase):
     id: int
     test_point_id: int
     code: str  # 测试用例编号
+
+    # 审批相关字段
+    approval_status: str = 'pending'
+    approved_by: Optional[int] = None
+    approved_at: Optional[datetime] = None
+    approval_comment: Optional[str] = None
+
     created_at: datetime
     updated_at: Optional[datetime] = None
 

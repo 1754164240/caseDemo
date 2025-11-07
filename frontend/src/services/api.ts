@@ -157,6 +157,10 @@ export const testPointsAPI = {
     api.post(`/test-points/${id}/feedback`, null, { params: { feedback } }),
   regenerate: (requirementId: number, feedback?: string) =>
     api.post(`/test-points/regenerate/${requirementId}`, null, { params: { feedback } }),
+  // 审批相关
+  approve: (id: number, data: { approval_status: string; approval_comment?: string }) =>
+    api.post(`/test-points/${id}/approve`, data),
+  resetApproval: (id: number) => api.post(`/test-points/${id}/reset-approval`),
 }
 
 export const testCasesAPI = {
@@ -166,5 +170,9 @@ export const testCasesAPI = {
   update: (id: number, data: any) => api.put(`/test-cases/${id}`, data),
   delete: (id: number) => api.delete(`/test-cases/${id}`),
   generate: (testPointId: number) => api.post(`/test-cases/generate/${testPointId}`),
+  // 审批相关
+  approve: (id: number, data: { approval_status: string; approval_comment?: string }) =>
+    api.post(`/test-cases/${id}/approve`, data),
+  resetApproval: (id: number) => api.post(`/test-cases/${id}/reset-approval`),
 }
 

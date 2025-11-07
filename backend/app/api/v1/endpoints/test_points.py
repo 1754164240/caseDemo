@@ -8,7 +8,7 @@ from app.api.deps import get_current_active_user
 from app.models.user import User
 from app.models.test_point import TestPoint
 from app.models.requirement import Requirement
-from app.schemas.test_point import TestPoint as TestPointSchema, TestPointCreate, TestPointUpdate, TestPointWithCases
+from app.schemas.test_point import TestPoint as TestPointSchema, TestPointCreate, TestPointUpdate, TestPointWithCases, TestPointApproval
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.services.document_parser import DocumentParser
@@ -290,4 +290,68 @@ def delete_test_point(
     db.commit()
 
     return {"message": "Test point deleted successfully"}
+
+
+@router.post("/{test_point_id}/approve", response_model=TestPointSchema)
+def approve_test_point(
+    test_point_id: int,
+    approval: TestPointApproval,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """审批测试点"""
+    # 验证审批状态
+    if approval.approval_status not in ['approved', 'rejected']:
+        raise HTTPException(status_code=400, detail="Invalid approval status. Must be 'approved' or 'rejected'")
+
+    # 查询测试点
+    test_point = db.query(TestPoint).join(Requirement).filter(
+        TestPoint.id == test_point_id,
+        Requirement.user_id == current_user.id
+    ).first()
+
+    if not test_point:
+        raise HTTPException(status_code=404, detail="Test point not found")
+
+    # 更新审批信息
+    test_point.approval_status = approval.approval_status
+    test_point.approved_by = current_user.id
+    test_point.approved_at = func.now()
+    test_point.approval_comment = approval.approval_comment
+
+    # 同步更新 is_approved 字段（用于兼容性）
+    test_point.is_approved = (approval.approval_status == 'approved')
+
+    db.commit()
+    db.refresh(test_point)
+
+    return test_point
+
+
+@router.post("/{test_point_id}/reset-approval", response_model=TestPointSchema)
+def reset_test_point_approval(
+    test_point_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """重置测试点审批状态"""
+    test_point = db.query(TestPoint).join(Requirement).filter(
+        TestPoint.id == test_point_id,
+        Requirement.user_id == current_user.id
+    ).first()
+
+    if not test_point:
+        raise HTTPException(status_code=404, detail="Test point not found")
+
+    # 重置审批信息
+    test_point.approval_status = 'pending'
+    test_point.approved_by = None
+    test_point.approved_at = None
+    test_point.approval_comment = None
+    test_point.is_approved = False
+
+    db.commit()
+    db.refresh(test_point)
+
+    return test_point
 

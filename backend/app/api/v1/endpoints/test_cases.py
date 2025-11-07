@@ -9,7 +9,7 @@ from app.models.user import User
 from app.models.test_case import TestCase
 from app.models.test_point import TestPoint
 from app.models.requirement import Requirement
-from app.schemas.test_case import TestCase as TestCaseSchema, TestCaseCreate, TestCaseUpdate
+from app.schemas.test_case import TestCase as TestCaseSchema, TestCaseCreate, TestCaseUpdate, TestCaseApproval
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.services.document_parser import DocumentParser
@@ -196,17 +196,20 @@ def update_test_case(
         TestCase.id == test_case_id,
         Requirement.user_id == current_user.id
     ).first()
-    
+
     if not test_case:
         raise HTTPException(status_code=404, detail="Test case not found")
-    
+
     update_data = test_case_in.model_dump(exclude_unset=True)
+    # 确保不更新 code 字段（编号是自动生成的，不可修改）
+    update_data.pop('code', None)
+
     for field, value in update_data.items():
         setattr(test_case, field, value)
-    
+
     db.commit()
     db.refresh(test_case)
-    
+
     return test_case
 
 
@@ -227,6 +230,66 @@ def delete_test_case(
     
     db.delete(test_case)
     db.commit()
-    
+
     return {"message": "Test case deleted successfully"}
+
+
+@router.post("/{test_case_id}/approve", response_model=TestCaseSchema)
+def approve_test_case(
+    test_case_id: int,
+    approval: TestCaseApproval,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """审批测试用例"""
+    # 验证审批状态
+    if approval.approval_status not in ['approved', 'rejected']:
+        raise HTTPException(status_code=400, detail="Invalid approval status. Must be 'approved' or 'rejected'")
+
+    # 查询测试用例
+    test_case = db.query(TestCase).join(TestPoint).join(Requirement).filter(
+        TestCase.id == test_case_id,
+        Requirement.user_id == current_user.id
+    ).first()
+
+    if not test_case:
+        raise HTTPException(status_code=404, detail="Test case not found")
+
+    # 更新审批信息
+    test_case.approval_status = approval.approval_status
+    test_case.approved_by = current_user.id
+    test_case.approved_at = func.now()
+    test_case.approval_comment = approval.approval_comment
+
+    db.commit()
+    db.refresh(test_case)
+
+    return test_case
+
+
+@router.post("/{test_case_id}/reset-approval", response_model=TestCaseSchema)
+def reset_test_case_approval(
+    test_case_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """重置测试用例审批状态"""
+    test_case = db.query(TestCase).join(TestPoint).join(Requirement).filter(
+        TestCase.id == test_case_id,
+        Requirement.user_id == current_user.id
+    ).first()
+
+    if not test_case:
+        raise HTTPException(status_code=404, detail="Test case not found")
+
+    # 重置审批信息
+    test_case.approval_status = 'pending'
+    test_case.approved_by = None
+    test_case.approved_at = None
+    test_case.approval_comment = None
+
+    db.commit()
+    db.refresh(test_case)
+
+    return test_case
 

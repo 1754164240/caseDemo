@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Table, Button, Modal, Form, Input, Select, message, Space, Popconfirm, Tabs, Tag, Drawer, Descriptions } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, ThunderboltOutlined, EyeOutlined } from '@ant-design/icons'
+import { Table, Button, Modal, Form, Input, Select, message, Space, Popconfirm, Tabs, Tag, Drawer, Descriptions, Card, Tooltip } from 'antd'
+import { PlusOutlined, DeleteOutlined, EditOutlined, ThunderboltOutlined, EyeOutlined, MinusCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined } from '@ant-design/icons'
 import { testPointsAPI, testCasesAPI, requirementsAPI } from '../services/api'
 import dayjs from 'dayjs'
 
@@ -38,6 +38,12 @@ export default function TestCases() {
   const [editTestCaseModalVisible, setEditTestCaseModalVisible] = useState(false)
   const [editingTestCase, setEditingTestCase] = useState<any>(null)
   const [editTestCaseForm] = Form.useForm()
+
+  // 审批相关
+  const [approvalModalVisible, setApprovalModalVisible] = useState(false)
+  const [approvalType, setApprovalType] = useState<'testPoint' | 'testCase'>('testPoint')
+  const [approvalItem, setApprovalItem] = useState<any>(null)
+  const [approvalForm] = Form.useForm()
 
   useEffect(() => {
     loadRequirements()
@@ -182,13 +188,28 @@ export default function TestCases() {
     // 处理 test_steps 字段
     let testStepsValue = record.test_steps
     if (Array.isArray(testStepsValue)) {
-      // 如果是对象数组，转换为字符串
-      testStepsValue = testStepsValue.map((item: any, index: number) => {
+      // 如果是对象数组，清理数据
+      testStepsValue = testStepsValue.map((item: any) => {
         if (typeof item === 'object' && item !== null) {
-          return `${index + 1}. ${item.action || ''} - 预期: ${item.expected || ''}`
+          let action = item.action || ''
+          let expected = item.expected || ''
+
+          // 去掉 action 中可能已经存在的序号
+          action = action.replace(/^\d+\.\s*/, '')
+          // 去掉 action 中可能已经存在的预期部分
+          action = action.replace(/\s*-\s*预期:.*$/, '')
+          action = action.trim()
+
+          return {
+            action: action,
+            expected: expected
+          }
         }
         return item
-      }).join('\n')
+      })
+    } else {
+      // 如果没有测试步骤，初始化一个空步骤
+      testStepsValue = [{ action: '', expected: '' }]
     }
 
     editTestCaseForm.setFieldsValue({
@@ -206,15 +227,89 @@ export default function TestCases() {
   const handleUpdateTestCase = async () => {
     try {
       const values = await editTestCaseForm.validateFields()
-      await testCasesAPI.update(editingTestCase.id, values)
+
+      // 处理 test_steps：添加 step 序号
+      const processedValues = { ...values }
+      if (values.test_steps && Array.isArray(values.test_steps)) {
+        processedValues.test_steps = values.test_steps.map((item: any, index: number) => ({
+          step: index + 1,
+          action: item.action || '',
+          expected: item.expected || ''
+        }))
+      }
+
+      await testCasesAPI.update(editingTestCase.id, processedValues)
       message.success('更新成功')
       setEditTestCaseModalVisible(false)
       setEditingTestCase(null)
       editTestCaseForm.resetFields()
       loadTestCases()
-    } catch (error) {
-      message.error('更新失败')
+    } catch (error: any) {
+      console.error('更新失败:', error)
+      message.error(error.response?.data?.detail || '更新失败')
     }
+  }
+
+  // 审批相关函数
+  const handleOpenApproval = (item: any, type: 'testPoint' | 'testCase') => {
+    setApprovalItem(item)
+    setApprovalType(type)
+    approvalForm.resetFields()
+    setApprovalModalVisible(true)
+  }
+
+  const handleApprove = async () => {
+    try {
+      const values = await approvalForm.validateFields()
+      const data = {
+        approval_status: values.approval_status,
+        approval_comment: values.approval_comment
+      }
+
+      if (approvalType === 'testPoint') {
+        await testPointsAPI.approve(approvalItem.id, data)
+        message.success('测试点审批成功')
+        loadTestPoints()
+      } else {
+        await testCasesAPI.approve(approvalItem.id, data)
+        message.success('测试用例审批成功')
+        loadTestCases()
+      }
+
+      setApprovalModalVisible(false)
+      approvalForm.resetFields()
+    } catch (error: any) {
+      console.error('审批失败:', error)
+      message.error(error.response?.data?.detail || '审批失败')
+    }
+  }
+
+  const handleResetApproval = async (item: any, type: 'testPoint' | 'testCase') => {
+    try {
+      if (type === 'testPoint') {
+        await testPointsAPI.resetApproval(item.id)
+        message.success('测试点审批状态已重置')
+        loadTestPoints()
+      } else {
+        await testCasesAPI.resetApproval(item.id)
+        message.success('测试用例审批状态已重置')
+        loadTestCases()
+      }
+    } catch (error: any) {
+      console.error('重置失败:', error)
+      message.error(error.response?.data?.detail || '重置失败')
+    }
+  }
+
+  // 渲染审批状态标签
+  const renderApprovalStatus = (status: string) => {
+    const statusConfig: any = {
+      pending: { color: 'default', text: '待审批', icon: <SyncOutlined spin /> },
+      approved: { color: 'success', text: '已通过', icon: <CheckCircleOutlined /> },
+      rejected: { color: 'error', text: '已拒绝', icon: <CloseCircleOutlined /> }
+    }
+    const config = statusConfig[status] || statusConfig.pending
+    return <Tag color={config.color} icon={config.icon}>{config.text}</Tag>
   }
 
   const testPointColumns = [
@@ -292,6 +387,14 @@ export default function TestCases() {
       align: 'center' as const,
     },
     {
+      title: '审批状态',
+      dataIndex: 'approval_status',
+      key: 'approval_status',
+      width: 100,
+      align: 'center' as const,
+      render: (status: string) => renderApprovalStatus(status || 'pending'),
+    },
+    {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
@@ -301,7 +404,7 @@ export default function TestCases() {
     {
       title: '操作',
       key: 'action',
-      width: 280,
+      width: 350,
       render: (_: any, record: any) => (
         <Space>
           <Button
@@ -320,6 +423,28 @@ export default function TestCases() {
           >
             生成用例
           </Button>
+          {record.approval_status === 'pending' && (
+            <Button
+              type="link"
+              icon={<CheckCircleOutlined />}
+              size="small"
+              onClick={() => handleOpenApproval(record, 'testPoint')}
+            >
+              审批
+            </Button>
+          )}
+          {record.approval_status !== 'pending' && (
+            <Tooltip title="重置审批状态">
+              <Button
+                type="link"
+                icon={<SyncOutlined />}
+                size="small"
+                onClick={() => handleResetApproval(record, 'testPoint')}
+              >
+                重置
+              </Button>
+            </Tooltip>
+          )}
           <Popconfirm
             title="确定删除此测试点吗？"
             onConfirm={() => handleDeleteTestPoint(record.id)}
@@ -422,6 +547,14 @@ export default function TestCases() {
       render: (text: string) => text ? <Tag color="cyan">{text}</Tag> : '-',
     },
     {
+      title: '审批状态',
+      dataIndex: 'approval_status',
+      key: 'approval_status',
+      width: 100,
+      align: 'center' as const,
+      render: (status: string) => renderApprovalStatus(status || 'pending'),
+    },
+    {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
@@ -431,7 +564,7 @@ export default function TestCases() {
     {
       title: '操作',
       key: 'action',
-      width: 220,
+      width: 300,
       render: (_: any, record: any) => (
         <Space>
           <Button
@@ -450,6 +583,28 @@ export default function TestCases() {
           >
             编辑
           </Button>
+          {record.approval_status === 'pending' && (
+            <Button
+              type="link"
+              icon={<CheckCircleOutlined />}
+              size="small"
+              onClick={() => handleOpenApproval(record, 'testCase')}
+            >
+              审批
+            </Button>
+          )}
+          {record.approval_status !== 'pending' && (
+            <Tooltip title="重置审批状态">
+              <Button
+                type="link"
+                icon={<SyncOutlined />}
+                size="small"
+                onClick={() => handleResetApproval(record, 'testCase')}
+              >
+                重置
+              </Button>
+            </Tooltip>
+          )}
           <Popconfirm
             title="确定删除此测试用例吗？"
             onConfirm={() => handleDeleteTestCase(record.id)}
@@ -668,6 +823,19 @@ export default function TestCases() {
               <Descriptions.Item label="用例数量">
                 {selectedTestPoint.test_cases_count || 0}
               </Descriptions.Item>
+              <Descriptions.Item label="审批状态">
+                {renderApprovalStatus(selectedTestPoint.approval_status || 'pending')}
+              </Descriptions.Item>
+              {selectedTestPoint.approved_at && (
+                <Descriptions.Item label="审批时间">
+                  {dayjs(selectedTestPoint.approved_at).format('YYYY-MM-DD HH:mm:ss')}
+                </Descriptions.Item>
+              )}
+              {selectedTestPoint.approval_comment && (
+                <Descriptions.Item label="审批意见">
+                  {selectedTestPoint.approval_comment}
+                </Descriptions.Item>
+              )}
               <Descriptions.Item label="创建时间">
                 {dayjs(selectedTestPoint.created_at).format('YYYY-MM-DD HH:mm:ss')}
               </Descriptions.Item>
@@ -850,6 +1018,19 @@ export default function TestCases() {
                 })()}
               </div>
             </Descriptions.Item>
+            <Descriptions.Item label="审批状态">
+              {renderApprovalStatus(selectedTestCase.approval_status || 'pending')}
+            </Descriptions.Item>
+            {selectedTestCase.approved_at && (
+              <Descriptions.Item label="审批时间">
+                {dayjs(selectedTestCase.approved_at).format('YYYY-MM-DD HH:mm:ss')}
+              </Descriptions.Item>
+            )}
+            {selectedTestCase.approval_comment && (
+              <Descriptions.Item label="审批意见">
+                {selectedTestCase.approval_comment}
+              </Descriptions.Item>
+            )}
             <Descriptions.Item label="创建时间">
               {dayjs(selectedTestCase.created_at).format('YYYY-MM-DD HH:mm:ss')}
             </Descriptions.Item>
@@ -867,9 +1048,11 @@ export default function TestCases() {
           setEditingTestCase(null)
           editTestCaseForm.resetFields()
         }}
-        width={800}
+        width={900}
         okText="保存"
         cancelText="取消"
+        style={{ top: 20 }}
+        bodyStyle={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}
       >
         <Form form={editTestCaseForm} layout="vertical">
           <Form.Item
@@ -888,11 +1071,61 @@ export default function TestCases() {
             <Input.TextArea rows={3} placeholder="请输入前置条件" />
           </Form.Item>
 
-          <Form.Item label="测试步骤" name="test_steps">
-            <Input.TextArea
-              rows={6}
-              placeholder="请输入测试步骤，每行一个步骤"
-            />
+          <Form.Item label="测试步骤">
+            <Form.List name="test_steps">
+              {(fields, { add, remove }) => (
+                <>
+                  {fields.map(({ key, name, ...restField }, index) => (
+                    <Card
+                      key={key}
+                      size="small"
+                      title={`步骤 ${index + 1}`}
+                      extra={
+                        fields.length > 1 ? (
+                          <MinusCircleOutlined
+                            onClick={() => remove(name)}
+                            style={{ color: '#ff4d4f' }}
+                          />
+                        ) : null
+                      }
+                      style={{ marginBottom: 16 }}
+                    >
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'action']}
+                        label="操作步骤"
+                        rules={[{ required: true, message: '请输入操作步骤' }]}
+                      >
+                        <Input.TextArea
+                          rows={2}
+                          placeholder="请输入具体的操作步骤"
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'expected']}
+                        label="预期结果"
+                      >
+                        <Input.TextArea
+                          rows={2}
+                          placeholder="请输入该步骤的预期结果（可选）"
+                        />
+                      </Form.Item>
+                    </Card>
+                  ))}
+                  <Form.Item>
+                    <Button
+                      type="dashed"
+                      onClick={() => add()}
+                      block
+                      icon={<PlusOutlined />}
+                    >
+                      添加测试步骤
+                    </Button>
+                  </Form.Item>
+                </>
+              )}
+            </Form.List>
           </Form.Item>
 
           <Form.Item label="预期结果" name="expected_result">
@@ -909,6 +1142,50 @@ export default function TestCases() {
 
           <Form.Item label="测试类型" name="test_type">
             <Input placeholder="如：功能测试、性能测试等" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 审批模态框 */}
+      <Modal
+        title={`审批${approvalType === 'testPoint' ? '测试点' : '测试用例'}`}
+        open={approvalModalVisible}
+        onOk={handleApprove}
+        onCancel={() => {
+          setApprovalModalVisible(false)
+          approvalForm.resetFields()
+        }}
+        okText="提交"
+        cancelText="取消"
+      >
+        <Form form={approvalForm} layout="vertical">
+          <Form.Item label="审批对象">
+            <Input value={approvalItem?.title || approvalItem?.code} disabled />
+          </Form.Item>
+
+          <Form.Item
+            label="审批结果"
+            name="approval_status"
+            rules={[{ required: true, message: '请选择审批结果' }]}
+          >
+            <Select placeholder="请选择审批结果">
+              <Select.Option value="approved">
+                <CheckCircleOutlined style={{ color: '#52c41a' }} /> 通过
+              </Select.Option>
+              <Select.Option value="rejected">
+                <CloseCircleOutlined style={{ color: '#ff4d4f' }} /> 拒绝
+              </Select.Option>
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            label="审批意见"
+            name="approval_comment"
+          >
+            <Input.TextArea
+              rows={4}
+              placeholder="请输入审批意见（可选）"
+            />
           </Form.Item>
         </Form>
       </Modal>

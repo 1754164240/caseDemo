@@ -23,12 +23,25 @@ class TestPointUpdate(BaseModel):
     user_feedback: Optional[str] = None
 
 
+class TestPointApproval(BaseModel):
+    """审批操作的请求模型"""
+    approval_status: str  # approved 或 rejected
+    approval_comment: Optional[str] = None
+
+
 class TestPointInDB(TestPointBase):
     id: int
     requirement_id: int
     code: str  # 测试点编号
     is_approved: bool
     user_feedback: Optional[str] = None
+
+    # 审批相关字段
+    approval_status: str = 'pending'
+    approved_by: Optional[int] = None
+    approved_at: Optional[datetime] = None
+    approval_comment: Optional[str] = None
+
     created_at: datetime
     updated_at: Optional[datetime] = None
 
