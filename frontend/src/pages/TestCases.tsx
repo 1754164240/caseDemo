@@ -8,18 +8,22 @@ const { TabPane } = Tabs
 
 export default function TestCases() {
   const [testPoints, setTestPoints] = useState([])
+  const [allTestPoints, setAllTestPoints] = useState([]) // 所有测试点，用于测试用例页面的筛选下拉框
   const [testCases, setTestCases] = useState([])
-  const [allTestCases, setAllTestCases] = useState([]) // 保存所有测试用例用于筛选
   const [requirements, setRequirements] = useState([])
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
   const [modalType, setModalType] = useState<'testPoint' | 'testCase'>('testPoint')
   const [form] = Form.useForm()
+
+  // 测试点筛选和搜索
   const [selectedRequirement, setSelectedRequirement] = useState<number>()
+  const [testPointSearchKeyword, setTestPointSearchKeyword] = useState('')
 
   // 测试用例筛选和搜索
+  const [selectedRequirementFilter, setSelectedRequirementFilter] = useState<number>()
   const [selectedTestPointFilter, setSelectedTestPointFilter] = useState<number>()
-  const [searchKeyword, setSearchKeyword] = useState('')
+  const [testCaseSearchKeyword, setTestCaseSearchKeyword] = useState('')
 
   // 测试点详情抽屉
   const [testPointDrawerVisible, setTestPointDrawerVisible] = useState(false)
@@ -37,11 +41,15 @@ export default function TestCases() {
 
   useEffect(() => {
     loadRequirements()
+    loadAllTestPoints()
     loadTestPoints()
     loadTestCases()
 
     // 监听 WebSocket 更新
-    const handleTestPointsUpdate = () => loadTestPoints()
+    const handleTestPointsUpdate = () => {
+      loadAllTestPoints()
+      loadTestPoints()
+    }
     const handleTestCasesUpdate = () => loadTestCases()
     window.addEventListener('test-points-updated', handleTestPointsUpdate)
     window.addEventListener('test-cases-updated', handleTestCasesUpdate)
@@ -60,10 +68,26 @@ export default function TestCases() {
     }
   }
 
-  const loadTestPoints = async (requirementId?: number) => {
+  // 加载所有测试点（用于测试用例页面的筛选下拉框）
+  const loadAllTestPoints = async () => {
+    try {
+      const response = await testPointsAPI.list()
+      setAllTestPoints(response.data)
+    } catch (error) {
+      console.error('Failed to load all test points:', error)
+    }
+  }
+
+  const loadTestPoints = async () => {
     setLoading(true)
     try {
-      const params = requirementId ? { requirement_id: requirementId } : {}
+      const params: any = {}
+      if (selectedRequirement) {
+        params.requirement_id = selectedRequirement
+      }
+      if (testPointSearchKeyword) {
+        params.search = testPointSearchKeyword
+      }
       const response = await testPointsAPI.list(params)
       setTestPoints(response.data)
     } catch (error) {
@@ -73,12 +97,20 @@ export default function TestCases() {
     }
   }
 
-  const loadTestCases = async (testPointId?: number) => {
+  const loadTestCases = async () => {
     setLoading(true)
     try {
-      const params = testPointId ? { test_point_id: testPointId } : {}
+      const params: any = {}
+      if (selectedRequirementFilter) {
+        params.requirement_id = selectedRequirementFilter
+      }
+      if (selectedTestPointFilter) {
+        params.test_point_id = selectedTestPointFilter
+      }
+      if (testCaseSearchKeyword) {
+        params.search = testCaseSearchKeyword
+      }
       const response = await testCasesAPI.list(params)
-      setAllTestCases(response.data)
       setTestCases(response.data)
     } catch (error) {
       message.error('加载测试用例失败')
@@ -87,33 +119,15 @@ export default function TestCases() {
     }
   }
 
-  // 筛选和搜索测试用例
-  const filterTestCases = () => {
-    let filtered = [...allTestCases]
-
-    // 按测试点筛选
-    if (selectedTestPointFilter) {
-      filtered = filtered.filter((tc: any) => tc.test_point_id === selectedTestPointFilter)
-    }
-
-    // 按关键词搜索
-    if (searchKeyword) {
-      const keyword = searchKeyword.toLowerCase()
-      filtered = filtered.filter((tc: any) =>
-        tc.title?.toLowerCase().includes(keyword) ||
-        tc.description?.toLowerCase().includes(keyword) ||
-        tc.preconditions?.toLowerCase().includes(keyword) ||
-        tc.expected_result?.toLowerCase().includes(keyword)
-      )
-    }
-
-    setTestCases(filtered)
-  }
-
-  // 监听筛选条件变化
+  // 监听测试点筛选条件变化
   useEffect(() => {
-    filterTestCases()
-  }, [selectedTestPointFilter, searchKeyword, allTestCases])
+    loadTestPoints()
+  }, [selectedRequirement, testPointSearchKeyword])
+
+  // 监听测试用例筛选条件变化
+  useEffect(() => {
+    loadTestCases()
+  }, [selectedRequirementFilter, selectedTestPointFilter, testCaseSearchKeyword])
 
   const handleGenerateTestCases = async (testPointId: number) => {
     try {
@@ -205,10 +219,10 @@ export default function TestCases() {
 
   const testPointColumns = [
     {
-      title: 'ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 60,
+      title: '测试点编号',
+      dataIndex: 'code',
+      key: 'code',
+      width: 120,
       fixed: 'left' as const,
     },
     {
@@ -252,13 +266,21 @@ export default function TestCases() {
       dataIndex: 'priority',
       key: 'priority',
       width: 80,
+      align: 'center' as const,
       render: (priority: string) => {
+        if (!priority) return '-'
+
         const priorityMap: any = {
           high: { color: 'red', text: '高' },
           medium: { color: 'orange', text: '中' },
           low: { color: 'green', text: '低' },
+          '高': { color: 'red', text: '高' },
+          '中': { color: 'orange', text: '中' },
+          '低': { color: 'green', text: '低' },
         }
-        const config = priorityMap[priority] || { color: 'default', text: priority }
+
+        const key = priority.toLowerCase()
+        const config = priorityMap[key] || priorityMap[priority] || { color: 'default', text: priority }
         return <Tag color={config.color}>{config.text}</Tag>
       },
     },
@@ -315,10 +337,10 @@ export default function TestCases() {
 
   const testCaseColumns = [
     {
-      title: 'ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 60,
+      title: '测试用例编号',
+      dataIndex: 'code',
+      key: 'code',
+      width: 140,
       fixed: 'left' as const,
     },
     {
@@ -375,12 +397,20 @@ export default function TestCases() {
       width: 80,
       align: 'center' as const,
       render: (priority: string) => {
+        if (!priority) return '-'
+
         const priorityMap: any = {
           high: { color: 'red', text: '高' },
           medium: { color: 'orange', text: '中' },
           low: { color: 'green', text: '低' },
+          '高': { color: 'red', text: '高' },
+          '中': { color: 'orange', text: '中' },
+          '低': { color: 'green', text: '低' },
         }
-        const config = priorityMap[priority] || { color: 'default', text: priority }
+
+        // 转换为小写进行匹配
+        const key = priority.toLowerCase()
+        const config = priorityMap[key] || priorityMap[priority] || { color: 'default', text: priority }
         return <Tag color={config.color}>{config.text}</Tag>
       },
     },
@@ -442,15 +472,19 @@ export default function TestCases() {
       <Tabs defaultActiveKey="testPoints">
         <TabPane tab="测试点" key="testPoints">
           <div style={{ marginBottom: 16 }}>
-            <Space size="middle">
+            <Space size="middle" style={{ width: '100%', flexWrap: 'wrap' }}>
               <Select
+                showSearch
                 placeholder="筛选需求"
                 style={{ width: 300 }}
                 allowClear
+                filterOption={(input, option) =>
+                  (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+                }
                 onChange={(value) => {
                   setSelectedRequirement(value)
-                  loadTestPoints(value)
                 }}
+                value={selectedRequirement}
               >
                 {requirements.map((req: any) => (
                   <Select.Option key={req.id} value={req.id}>
@@ -458,6 +492,27 @@ export default function TestCases() {
                   </Select.Option>
                 ))}
               </Select>
+              <Input.Search
+                placeholder="搜索测试点（标题、描述、分类）"
+                style={{ width: 350 }}
+                allowClear
+                onSearch={(value) => setTestPointSearchKeyword(value)}
+                onChange={(e) => {
+                  if (!e.target.value) {
+                    setTestPointSearchKeyword('')
+                  }
+                }}
+              />
+              {(selectedRequirement || testPointSearchKeyword) && (
+                <Button
+                  onClick={() => {
+                    setSelectedRequirement(undefined)
+                    setTestPointSearchKeyword('')
+                  }}
+                >
+                  清除筛选
+                </Button>
+              )}
               <span style={{ color: '#999' }}>
                 共 {testPoints.length} 个测试点
               </span>
@@ -481,36 +536,64 @@ export default function TestCases() {
           <div style={{ marginBottom: 16 }}>
             <Space size="middle" style={{ width: '100%', flexWrap: 'wrap' }}>
               <Select
-                placeholder="筛选测试点"
-                style={{ width: 300 }}
+                showSearch
+                placeholder="筛选需求"
+                style={{ width: 250 }}
                 allowClear
+                filterOption={(input, option) =>
+                  (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+                }
+                onChange={(value) => {
+                  setSelectedRequirementFilter(value)
+                  // 清除测试点筛选
+                  setSelectedTestPointFilter(undefined)
+                }}
+                value={selectedRequirementFilter}
+              >
+                {requirements.map((req: any) => (
+                  <Select.Option key={req.id} value={req.id}>
+                    {req.title}
+                  </Select.Option>
+                ))}
+              </Select>
+              <Select
+                showSearch
+                placeholder="筛选测试点"
+                style={{ width: 250 }}
+                allowClear
+                filterOption={(input, option) =>
+                  (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+                }
                 onChange={(value) => {
                   setSelectedTestPointFilter(value)
                 }}
                 value={selectedTestPointFilter}
               >
-                {testPoints.map((tp: any) => (
-                  <Select.Option key={tp.id} value={tp.id}>
-                    {tp.title}
-                  </Select.Option>
-                ))}
+                {allTestPoints
+                  .filter((tp: any) => !selectedRequirementFilter || tp.requirement_id === selectedRequirementFilter)
+                  .map((tp: any) => (
+                    <Select.Option key={tp.id} value={tp.id}>
+                      {tp.title}
+                    </Select.Option>
+                  ))}
               </Select>
               <Input.Search
                 placeholder="搜索测试用例（标题、描述、前置条件、预期结果）"
-                style={{ width: 400 }}
+                style={{ width: 350 }}
                 allowClear
-                onSearch={(value) => setSearchKeyword(value)}
+                onSearch={(value) => setTestCaseSearchKeyword(value)}
                 onChange={(e) => {
                   if (!e.target.value) {
-                    setSearchKeyword('')
+                    setTestCaseSearchKeyword('')
                   }
                 }}
               />
-              {(selectedTestPointFilter || searchKeyword) && (
+              {(selectedRequirementFilter || selectedTestPointFilter || testCaseSearchKeyword) && (
                 <Button
                   onClick={() => {
+                    setSelectedRequirementFilter(undefined)
                     setSelectedTestPointFilter(undefined)
-                    setSearchKeyword('')
+                    setTestCaseSearchKeyword('')
                   }}
                 >
                   清除筛选
@@ -518,9 +601,6 @@ export default function TestCases() {
               )}
               <span style={{ color: '#999' }}>
                 共 {testCases.length} 条测试用例
-                {allTestCases.length !== testCases.length &&
-                  ` (从 ${allTestCases.length} 条中筛选)`
-                }
               </span>
             </Space>
           </div>
@@ -569,12 +649,19 @@ export default function TestCases() {
               <Descriptions.Item label="优先级">
                 {(() => {
                   const priority = selectedTestPoint.priority
+                  if (!priority) return '-'
+
                   const priorityMap: any = {
                     high: { color: 'red', text: '高' },
                     medium: { color: 'orange', text: '中' },
                     low: { color: 'green', text: '低' },
+                    '高': { color: 'red', text: '高' },
+                    '中': { color: 'orange', text: '中' },
+                    '低': { color: 'green', text: '低' },
                   }
-                  const config = priorityMap[priority] || { color: 'default', text: priority }
+
+                  const key = priority.toLowerCase()
+                  const config = priorityMap[key] || priorityMap[priority] || { color: 'default', text: priority }
                   return <Tag color={config.color}>{config.text}</Tag>
                 })()}
               </Descriptions.Item>
@@ -621,12 +708,19 @@ export default function TestCases() {
                     key: 'priority',
                     width: 80,
                     render: (priority: string) => {
+                      if (!priority) return '-'
+
                       const priorityMap: any = {
                         high: { color: 'red', text: '高' },
                         medium: { color: 'orange', text: '中' },
                         low: { color: 'green', text: '低' },
+                        '高': { color: 'red', text: '高' },
+                        '中': { color: 'orange', text: '中' },
+                        '低': { color: 'green', text: '低' },
                       }
-                      const config = priorityMap[priority] || { color: 'default', text: priority }
+
+                      const key = priority.toLowerCase()
+                      const config = priorityMap[key] || priorityMap[priority] || { color: 'default', text: priority }
                       return <Tag color={config.color}>{config.text}</Tag>
                     },
                   },
@@ -679,12 +773,19 @@ export default function TestCases() {
             <Descriptions.Item label="优先级">
               {(() => {
                 const priority = selectedTestCase.priority
+                if (!priority) return '-'
+
                 const priorityMap: any = {
                   high: { color: 'red', text: '高' },
                   medium: { color: 'orange', text: '中' },
                   low: { color: 'green', text: '低' },
+                  '高': { color: 'red', text: '高' },
+                  '中': { color: 'orange', text: '中' },
+                  '低': { color: 'green', text: '低' },
                 }
-                const config = priorityMap[priority] || { color: 'default', text: priority }
+
+                const key = priority.toLowerCase()
+                const config = priorityMap[key] || priorityMap[priority] || { color: 'default', text: priority }
                 return <Tag color={config.color}>{config.text}</Tag>
               })()}
             </Descriptions.Item>

@@ -26,6 +26,7 @@ class TestPointUpdate(BaseModel):
 class TestPointInDB(TestPointBase):
     id: int
     requirement_id: int
+    code: str  # 测试点编号
     is_approved: bool
     user_feedback: Optional[str] = None
     created_at: datetime

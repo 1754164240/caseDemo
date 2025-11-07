@@ -1,6 +1,7 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.db.session import get_db
 from app.api.deps import get_current_active_user
@@ -8,11 +9,26 @@ from app.models.user import User
 from app.models.test_point import TestPoint
 from app.models.requirement import Requirement
 from app.schemas.test_point import TestPoint as TestPointSchema, TestPointCreate, TestPointUpdate, TestPointWithCases
-from app.services.ai_service import ai_service
+from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.services.document_parser import DocumentParser
 
 router = APIRouter()
+
+
+def generate_test_point_code(db: Session) -> str:
+    """生成测试点编号"""
+    # 获取当前最大编号
+    max_code = db.query(func.max(TestPoint.code)).scalar()
+    if max_code:
+        # 提取数字部分并加1
+        try:
+            num = int(max_code.split('-')[1])
+            return f"TP-{num + 1:03d}"
+        except:
+            pass
+    # 如果没有现有编号或解析失败，从 001 开始
+    return "TP-001"
 
 
 async def regenerate_test_points_background(requirement_id: int, user_feedback: str, db: Session, user_id: int):
@@ -36,14 +52,17 @@ async def regenerate_test_points_background(requirement_id: int, user_feedback: 
         print(f"[INFO] 文档解析成功，文本长度: {len(text)}")
 
         # 使用 AI 重新生成测试点（带用户反馈）
-        test_points_data = ai_service.extract_test_points(text, user_feedback)
+        ai_svc = get_ai_service(db)
+        test_points_data = ai_svc.extract_test_points(text, user_feedback)
 
         print(f"[INFO] 成功生成 {len(test_points_data)} 个测试点")
 
         # 保存新的测试点
         for tp_data in test_points_data:
+            code = generate_test_point_code(db)
             test_point = TestPoint(
                 requirement_id=requirement_id,
+                code=code,
                 title=tp_data.get('title', ''),
                 description=tp_data.get('description', ''),
                 category=tp_data.get('category', ''),
@@ -51,6 +70,7 @@ async def regenerate_test_points_background(requirement_id: int, user_feedback: 
                 user_feedback=user_feedback
             )
             db.add(test_point)
+            db.flush()  # 确保编号被保存，以便下一个测试点能获取正确的编号
 
         # 更新需求状态为已完成
         requirement.status = RequirementStatus.COMPLETED
@@ -79,6 +99,7 @@ async def regenerate_test_points_background(requirement_id: int, user_feedback: 
 @router.get("/", response_model=List[TestPointWithCases])
 def read_test_points(
     requirement_id: int = None,
+    search: str = None,
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
@@ -88,18 +109,27 @@ def read_test_points(
     query = db.query(TestPoint).join(Requirement).filter(
         Requirement.user_id == current_user.id
     )
-    
+
     if requirement_id:
         query = query.filter(TestPoint.requirement_id == requirement_id)
-    
+
+    # 搜索功能
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            (TestPoint.title.ilike(search_pattern)) |
+            (TestPoint.description.ilike(search_pattern)) |
+            (TestPoint.category.ilike(search_pattern))
+        )
+
     test_points = query.offset(skip).limit(limit).all()
-    
+
     result = []
     for tp in test_points:
         tp_dict = TestPointWithCases.model_validate(tp)
         tp_dict.test_cases_count = len(tp.test_cases)
         result.append(tp_dict)
-    
+
     return result
 
 
@@ -133,15 +163,18 @@ def create_test_point(
         Requirement.id == test_point_in.requirement_id,
         Requirement.user_id == current_user.id
     ).first()
-    
+
     if not requirement:
         raise HTTPException(status_code=404, detail="Requirement not found")
-    
-    test_point = TestPoint(**test_point_in.model_dump())
+
+    # 生成编号
+    code = generate_test_point_code(db)
+
+    test_point = TestPoint(**test_point_in.model_dump(), code=code)
     db.add(test_point)
     db.commit()
     db.refresh(test_point)
-    
+
     return test_point
 
 

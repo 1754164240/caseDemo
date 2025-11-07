@@ -221,9 +221,28 @@ caseDemo1/
 │   │   └── stores/           # 状态管理
 │   ├── package.json          # Node 依赖
 │   └── vite.config.ts        # Vite 配置
+├── bat/                       # 批处理脚本
+│   ├── install-backend.bat   # 安装后端依赖
+│   ├── install-frontend.bat  # 安装前端依赖
+│   ├── start-backend.bat     # 启动后端服务
+│   ├── start-frontend.bat    # 启动前端服务
+│   ├── setup-env.bat         # 环境配置
+│   ├── check-setup.bat       # 环境检查
+│   ├── create-test-user.bat  # 创建测试用户
+│   ├── set-superuser.bat     # 设置超级管理员
+│   └── create-system-config-table.bat # 创建配置表
+├── doc/                       # 项目文档
+│   ├── QUICK_START.md        # 快速启动指南
+│   ├── README_SETUP.md       # 详细安装指南
+│   ├── ARCHITECTURE.md       # 系统架构文档
+│   ├── PROJECT_OVERVIEW.md   # 项目总览
+│   ├── FEATURES.md           # 功能说明
+│   ├── TROUBLESHOOTING.md    # 问题排查指南
+│   ├── SYSTEM_CONFIG_GUIDE.md # 系统配置指南
+│   ├── MIGRATION_GUIDE.md    # 迁移指南
+│   └── PYTHON_313_COMPATIBILITY.md # Python 3.13 兼容性
 ├── docker-compose.yml        # Docker 配置
-├── README_SETUP.md          # 详细安装指南
-└── readme.md                # 项目说明（本文件）
+└── readme.md                 # 项目说明（本文件）
 ```
 
 ## 核心流程
@@ -304,15 +323,35 @@ MIT License
 
 ## 文档导航
 
+### 📚 核心文档
 - 📖 [README.md](./readme.md) - 项目说明（本文件）
-- 🚀 [QUICK_START.md](./QUICK_START.md) - 5 分钟快速启动指南
-- 📚 [README_SETUP.md](./README_SETUP.md) - 详细安装和配置指南
-- 🏗️ [ARCHITECTURE.md](./ARCHITECTURE.md) - 系统架构文档
-- 📋 [PROJECT_OVERVIEW.md](./PROJECT_OVERVIEW.md) - 项目总览和文件清单
+- 🚀 [QUICK_START.md](./doc/QUICK_START.md) - 5 分钟快速启动指南
+- 📚 [README_SETUP.md](./doc/README_SETUP.md) - 详细安装和配置指南
+- 🏗️ [ARCHITECTURE.md](./doc/ARCHITECTURE.md) - 系统架构文档
+- 📋 [PROJECT_OVERVIEW.md](./doc/PROJECT_OVERVIEW.md) - 项目总览和文件清单
+
+### 🔧 功能文档
+- ✨ [FEATURES.md](./doc/FEATURES.md) - 功能详细说明
+- ⚙️ [SYSTEM_CONFIG_GUIDE.md](./doc/SYSTEM_CONFIG_GUIDE.md) - 系统配置指南
+- 🔄 [MIGRATION_GUIDE.md](./doc/MIGRATION_GUIDE.md) - 版本迁移指南
+
+### 🛠️ 问题排查
+- 🔍 [TROUBLESHOOTING.md](./doc/TROUBLESHOOTING.md) - 常见问题和解决方案
+- 🐍 [PYTHON_313_COMPATIBILITY.md](./doc/PYTHON_313_COMPATIBILITY.md) - Python 3.13 兼容性说明
+
+### 🚀 快捷脚本
+- 📦 [bat/install-backend.bat](./bat/install-backend.bat) - 安装后端依赖
+- 📦 [bat/install-frontend.bat](./bat/install-frontend.bat) - 安装前端依赖
+- ▶️ [bat/start-backend.bat](./bat/start-backend.bat) - 启动后端服务
+- ▶️ [bat/start-frontend.bat](./bat/start-frontend.bat) - 启动前端服务
+- 🔧 [bat/setup-env.bat](./bat/setup-env.bat) - 环境配置
+- ✅ [bat/check-setup.bat](./bat/check-setup.bat) - 环境检查
 
 ## 技术支持
 
-- **快速开始**: 参考 [QUICK_START.md](./QUICK_START.md)
-- **详细配置**: 参考 [README_SETUP.md](./README_SETUP.md)
-- **架构设计**: 参考 [ARCHITECTURE.md](./ARCHITECTURE.md)
-- **项目结构**: 参考 [PROJECT_OVERVIEW.md](./PROJECT_OVERVIEW.md)
+- **快速开始**: 参考 [QUICK_START.md](./doc/QUICK_START.md)
+- **详细配置**: 参考 [README_SETUP.md](./doc/README_SETUP.md)
+- **架构设计**: 参考 [ARCHITECTURE.md](./doc/ARCHITECTURE.md)
+- **项目结构**: 参考 [PROJECT_OVERVIEW.md](./doc/PROJECT_OVERVIEW.md)
+- **功能说明**: 参考 [FEATURES.md](./doc/FEATURES.md)
+- **问题排查**: 参考 [TROUBLESHOOTING.md](./doc/TROUBLESHOOTING.md)

@@ -9,6 +9,7 @@ class TestCase(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     test_point_id = Column(Integer, ForeignKey("test_points.id"), nullable=False)
+    code = Column(String(30), unique=True, index=True)  # 测试用例编号，如 TP-001-1
     title = Column(String(200), nullable=False)
     description = Column(Text)
     preconditions = Column(Text)  # 前置条件

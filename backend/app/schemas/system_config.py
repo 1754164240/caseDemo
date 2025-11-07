@@ -33,12 +33,21 @@ class SystemConfig(SystemConfigInDB):
 
 # 特定配置的 Schema
 class MilvusConfigUpdate(BaseModel):
-    host: str
-    port: int
+    uri: str
+    user: str
+    password: str
+    token: str
+    db_name: str
+    collection_name: str
 
 
 class ModelConfigUpdate(BaseModel):
     api_key: str
     api_base: str
     model_name: str
+
+
+class PromptConfigUpdate(BaseModel):
+    test_point_prompt: str
+    test_case_prompt: str
 

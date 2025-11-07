@@ -12,10 +12,48 @@ from app.schemas.system_config import (
     SystemConfigCreate,
     SystemConfigUpdate,
     MilvusConfigUpdate,
-    ModelConfigUpdate
+    ModelConfigUpdate,
+    PromptConfigUpdate
 )
 
 router = APIRouter()
+
+
+# 默认 Prompt 模板
+DEFAULT_TEST_POINT_PROMPT = """你是一个专业的保险行业测试专家。请从需求文档中识别所有测试点。
+
+测试点应该包括：
+1. 功能性测试点
+2. 边界条件测试点
+3. 异常情况测试点
+4. 业务规则验证点
+
+请以JSON格式返回测试点列表，每个测试点包含：
+- title: 测试点标题
+- description: 详细描述
+- category: 分类（功能/边界/异常/业务规则）
+- priority: 优先级（high/medium/low）
+
+返回格式示例：
+[
+  {{"title": "测试点1", "description": "描述1", "category": "功能", "priority": "high"}},
+  {{"title": "测试点2", "description": "描述2", "category": "边界", "priority": "medium"}}
+]
+
+{feedback_instruction}"""
+
+DEFAULT_TEST_CASE_PROMPT = """你是一个专业的测试用例设计专家。请根据测试点生成详细的测试用例。
+
+测试用例应该包含：
+- title: 用例标题
+- description: 用例描述
+- preconditions: 前置条件
+- test_steps: 测试步骤（数组格式，每步包含 step, action, expected）
+- expected_result: 预期结果
+- priority: 优先级
+- test_type: 测试类型
+
+请以JSON格式返回测试用例列表。"""
 
 
 def get_or_create_config(db: Session, key: str, default_value: str, description: str = None) -> SystemConfig:
@@ -67,12 +105,36 @@ def get_milvus_config(
     current_user: User = Depends(get_current_active_superuser)
 ):
     """获取 Milvus 配置"""
-    host_config = get_or_create_config(db, "MILVUS_HOST", "localhost", "Milvus 服务器地址")
-    port_config = get_or_create_config(db, "MILVUS_PORT", "19530", "Milvus 服务器端口")
-    
+    uri_config = get_or_create_config(db, "MILVUS_URI", "http://localhost:19530", "Milvus 地址")
+    user_config = get_or_create_config(db, "MILVUS_USER", "", "Milvus 用户名")
+    password_config = get_or_create_config(db, "MILVUS_PASSWORD", "", "Milvus 密码")
+    token_config = get_or_create_config(db, "MILVUS_TOKEN", "", "Milvus Token")
+    db_name_config = get_or_create_config(db, "MILVUS_DB_NAME", "default", "Milvus 数据库名称")
+    collection_config = get_or_create_config(db, "MILVUS_COLLECTION_NAME", "test_cases", "Milvus Collection 名称")
+
+    # 隐藏密码的部分内容
+    password = password_config.config_value
+    if password and len(password) > 4:
+        masked_password = password[:2] + "*" * (len(password) - 4) + password[-2:]
+    else:
+        masked_password = password
+
+    # 隐藏 token 的部分内容
+    token = token_config.config_value
+    if token and len(token) > 8:
+        masked_token = token[:4] + "*" * (len(token) - 8) + token[-4:]
+    else:
+        masked_token = token
+
     return {
-        "host": host_config.config_value,
-        "port": int(port_config.config_value)
+        "uri": uri_config.config_value,
+        "user": user_config.config_value,
+        "password": masked_password,
+        "password_full": password,  # 用于编辑时回显
+        "token": masked_token,
+        "token_full": token,  # 用于编辑时回显
+        "db_name": db_name_config.config_value,
+        "collection_name": collection_config.config_value
     }
 
 
@@ -84,22 +146,49 @@ def update_milvus_config(
 ):
     """更新 Milvus 配置"""
     # 更新数据库
-    host_config = get_or_create_config(db, "MILVUS_HOST", "localhost", "Milvus 服务器地址")
-    host_config.config_value = config.host
-    
-    port_config = get_or_create_config(db, "MILVUS_PORT", "19530", "Milvus 服务器端口")
-    port_config.config_value = str(config.port)
-    
+    uri_config = get_or_create_config(db, "MILVUS_URI", "http://localhost:19530", "Milvus 地址")
+    uri_config.config_value = config.uri
+
+    user_config = get_or_create_config(db, "MILVUS_USER", "", "Milvus 用户名")
+    user_config.config_value = config.user
+
+    password_config = get_or_create_config(db, "MILVUS_PASSWORD", "", "Milvus 密码")
+    password_config.config_value = config.password
+
+    token_config = get_or_create_config(db, "MILVUS_TOKEN", "", "Milvus Token")
+    token_config.config_value = config.token
+
+    db_name_config = get_or_create_config(db, "MILVUS_DB_NAME", "default", "Milvus 数据库名称")
+    db_name_config.config_value = config.db_name
+
+    collection_config = get_or_create_config(db, "MILVUS_COLLECTION_NAME", "test_cases", "Milvus Collection 名称")
+    collection_config.config_value = config.collection_name
+
     db.commit()
-    
+
     # 更新 .env 文件
-    update_env_file("MILVUS_HOST", config.host)
-    update_env_file("MILVUS_PORT", str(config.port))
-    
+    update_env_file("MILVUS_URI", config.uri)
+    update_env_file("MILVUS_USER", config.user)
+    update_env_file("MILVUS_PASSWORD", config.password)
+    update_env_file("MILVUS_TOKEN", config.token)
+    update_env_file("MILVUS_DB_NAME", config.db_name)
+    update_env_file("MILVUS_COLLECTION_NAME", config.collection_name)
+
+    # 更新运行时配置
+    from app.core.config import settings
+    settings.MILVUS_URI = config.uri
+    settings.MILVUS_USER = config.user
+    settings.MILVUS_PASSWORD = config.password
+    settings.MILVUS_TOKEN = config.token
+    settings.MILVUS_DB_NAME = config.db_name
+    settings.MILVUS_COLLECTION_NAME = config.collection_name
+
     return {
-        "message": "Milvus 配置更新成功",
-        "host": config.host,
-        "port": config.port
+        "message": "Milvus 配置更新成功（建议重启后端以完全生效）",
+        "uri": config.uri,
+        "user": config.user,
+        "db_name": config.db_name,
+        "collection_name": config.collection_name
     }
 
 
@@ -162,6 +251,64 @@ def update_model_config(
         "message": "模型配置更新成功（部分配置需要重启后端才能完全生效）",
         "api_base": config.api_base,
         "model_name": config.model_name
+    }
+
+
+@router.get("/prompts")
+def get_prompt_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_superuser)
+):
+    """获取 Prompt 配置"""
+    test_point_prompt_config = get_or_create_config(
+        db,
+        "TEST_POINT_PROMPT",
+        DEFAULT_TEST_POINT_PROMPT,
+        "测试点生成 Prompt"
+    )
+    test_case_prompt_config = get_or_create_config(
+        db,
+        "TEST_CASE_PROMPT",
+        DEFAULT_TEST_CASE_PROMPT,
+        "测试用例生成 Prompt"
+    )
+
+    return {
+        "test_point_prompt": test_point_prompt_config.config_value,
+        "test_case_prompt": test_case_prompt_config.config_value
+    }
+
+
+@router.put("/prompts")
+def update_prompt_config(
+    config: PromptConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_superuser)
+):
+    """更新 Prompt 配置"""
+    # 更新数据库
+    test_point_prompt_config = get_or_create_config(
+        db,
+        "TEST_POINT_PROMPT",
+        DEFAULT_TEST_POINT_PROMPT,
+        "测试点生成 Prompt"
+    )
+    test_point_prompt_config.config_value = config.test_point_prompt
+
+    test_case_prompt_config = get_or_create_config(
+        db,
+        "TEST_CASE_PROMPT",
+        DEFAULT_TEST_CASE_PROMPT,
+        "测试用例生成 Prompt"
+    )
+    test_case_prompt_config.config_value = config.test_case_prompt
+
+    db.commit()
+
+    return {
+        "message": "Prompt 配置更新成功",
+        "test_point_prompt": config.test_point_prompt,
+        "test_case_prompt": config.test_case_prompt
     }
 
 

@@ -5,6 +5,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END, START
 from app.core.config import settings
 import operator
+from sqlalchemy.orm import Session
 
 
 class GraphState(ExtTypedDict):
@@ -18,8 +19,8 @@ class GraphState(ExtTypedDict):
 
 class AIService:
     """AI 服务 - 使用 LangGraph 生成测试点和用例"""
-    
-    def __init__(self):
+
+    def __init__(self, db: Session = None):
         # LangChain 1.0+ API: 使用 api_key 和 base_url 参数
         self.llm = ChatOpenAI(
             model=settings.MODEL_NAME,
@@ -31,10 +32,26 @@ class AIService:
             api_key=settings.OPENAI_API_KEY,
             base_url=settings.OPENAI_API_BASE if settings.OPENAI_API_BASE else None
         )
+        self.db = db
         
     def get_embedding(self, text: str) -> List[float]:
         """获取文本嵌入向量"""
         return self.embeddings.embed_query(text)
+
+    def _get_prompt_from_db(self, key: str, default: str) -> str:
+        """从数据库获取 Prompt 配置"""
+        if not self.db:
+            return default
+
+        try:
+            from app.models.system_config import SystemConfig
+            config = self.db.query(SystemConfig).filter(SystemConfig.config_key == key).first()
+            if config:
+                return config.config_value
+        except Exception as e:
+            print(f"[WARNING] 获取 Prompt 配置失败: {str(e)}")
+
+        return default
     
     def extract_test_points(self, requirement_text: str, user_feedback: str = None) -> List[Dict[str, Any]]:
         """从需求文档中提取测试点"""
@@ -46,8 +63,8 @@ class AIService:
                 print(f"[WARNING] 需求文本过长 ({len(requirement_text)} 字符)，截取前 {max_length} 字符")
                 requirement_text = requirement_text[:max_length] + "..."
 
-            prompt_template = ChatPromptTemplate.from_messages([
-                ("system", """你是一个专业的保险行业测试专家。请从需求文档中识别所有测试点。
+            # 从数据库获取 Prompt 配置
+            default_prompt = """你是一个专业的保险行业测试专家。请从需求文档中识别所有测试点。
 
 测试点应该包括：
 1. 功能性测试点
@@ -67,8 +84,12 @@ class AIService:
   {{"title": "测试点2", "description": "描述2", "category": "边界", "priority": "medium"}}
 ]
 
-{feedback_instruction}
-"""),
+{feedback_instruction}"""
+
+            system_prompt = self._get_prompt_from_db("TEST_POINT_PROMPT", default_prompt)
+
+            prompt_template = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
                 ("user", "需求文档内容：\n{requirement_text}")
             ])
 
@@ -129,9 +150,9 @@ class AIService:
     
     def generate_test_cases(self, test_point: Dict[str, Any], requirement_context: str = "") -> List[Dict[str, Any]]:
         """根据测试点生成测试用例"""
-        
-        prompt_template = ChatPromptTemplate.from_messages([
-            ("system", """你是一个专业的测试用例设计专家。请根据测试点生成详细的测试用例。
+
+        # 从数据库获取 Prompt 配置
+        default_prompt = """你是一个专业的测试用例设计专家。请根据测试点生成详细的测试用例。
 
 测试用例应该包含：
 - title: 用例标题
@@ -142,8 +163,12 @@ class AIService:
 - priority: 优先级
 - test_type: 测试类型
 
-请以JSON格式返回测试用例列表。
-"""),
+请以JSON格式返回测试用例列表。"""
+
+        system_prompt = self._get_prompt_from_db("TEST_CASE_PROMPT", default_prompt)
+
+        prompt_template = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
             ("user", """测试点信息：
 标题：{title}
 描述：{description}
@@ -233,5 +258,11 @@ class AIService:
         return workflow.compile()
 
 
+# 全局实例（用于不需要 Prompt 配置的场景）
 ai_service = AIService()
+
+
+def get_ai_service(db: Session = None) -> AIService:
+    """获取 AI 服务实例（支持 Prompt 配置）"""
+    return AIService(db=db)
 

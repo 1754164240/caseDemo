@@ -7,8 +7,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg://testcase:testcase123@localhost:5432/test_case_db"
 
     # Milvus
-    MILVUS_HOST: str = "localhost"
-    MILVUS_PORT: int = 19530
+    MILVUS_URI: str = "http://localhost:19530"
+    MILVUS_USER: str = ""
+    MILVUS_PASSWORD: str = ""
+    MILVUS_TOKEN: str = ""
+    MILVUS_DB_NAME: str = "default"
     MILVUS_COLLECTION_NAME: str = "test_cases"
 
     # OpenAI/LLM

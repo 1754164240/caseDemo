@@ -1,11 +1,16 @@
-import { Card, Form, Input, Button, message, Divider, InputNumber, Spin } from 'antd'
+import { Card, Form, Input, Button, message, InputNumber, Spin, Tabs } from 'antd'
 import { useState, useEffect } from 'react'
 import { systemConfigAPI } from '../services/api'
+import { DatabaseOutlined, ApiOutlined, FileTextOutlined, UserOutlined } from '@ant-design/icons'
+
+const { TextArea } = Input
+const { TabPane } = Tabs
 
 export default function Settings() {
   const [loading, setLoading] = useState(false)
   const [milvusForm] = Form.useForm()
   const [modelForm] = Form.useForm()
+  const [promptForm] = Form.useForm()
   const [initialLoading, setInitialLoading] = useState(true)
 
   // 加载配置
@@ -18,7 +23,14 @@ export default function Settings() {
     try {
       // 加载 Milvus 配置
       const milvusResponse = await systemConfigAPI.getMilvusConfig()
-      milvusForm.setFieldsValue(milvusResponse.data)
+      milvusForm.setFieldsValue({
+        uri: milvusResponse.data.uri,
+        user: milvusResponse.data.user,
+        password: milvusResponse.data.password_full,
+        token: milvusResponse.data.token_full,
+        db_name: milvusResponse.data.db_name,
+        collection_name: milvusResponse.data.collection_name,
+      })
 
       // 加载模型配置
       const modelResponse = await systemConfigAPI.getModelConfig()
@@ -26,6 +38,13 @@ export default function Settings() {
         api_key: modelResponse.data.api_key_full,
         api_base: modelResponse.data.api_base,
         model_name: modelResponse.data.model_name,
+      })
+
+      // 加载 Prompt 配置
+      const promptResponse = await systemConfigAPI.getPromptConfig()
+      promptForm.setFieldsValue({
+        test_point_prompt: promptResponse.data.test_point_prompt,
+        test_case_prompt: promptResponse.data.test_case_prompt,
       })
     } catch (error: any) {
       console.error('加载配置失败:', error)
@@ -39,10 +58,14 @@ export default function Settings() {
     setLoading(true)
     try {
       await systemConfigAPI.updateMilvusConfig({
-        host: values.host,
-        port: parseInt(values.port),
+        uri: values.uri,
+        user: values.user || '',
+        password: values.password || '',
+        token: values.token || '',
+        db_name: values.db_name,
+        collection_name: values.collection_name,
       })
-      message.success('Milvus 配置保存成功')
+      message.success('Milvus 配置保存成功（建议重启后端以完全生效）')
     } catch (error: any) {
       console.error('保存失败:', error)
       message.error(error.response?.data?.detail || '保存失败')
@@ -68,6 +91,22 @@ export default function Settings() {
     }
   }
 
+  const onSavePrompt = async (values: any) => {
+    setLoading(true)
+    try {
+      await systemConfigAPI.updatePromptConfig({
+        test_point_prompt: values.test_point_prompt,
+        test_case_prompt: values.test_case_prompt,
+      })
+      message.success('Prompt 配置保存成功')
+    } catch (error: any) {
+      console.error('保存失败:', error)
+      message.error(error.response?.data?.detail || '保存失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (initialLoading) {
     return (
       <div style={{ textAlign: 'center', padding: '100px 0' }}>
@@ -80,82 +119,186 @@ export default function Settings() {
     <div>
       <h1 style={{ marginBottom: 24 }}>系统管理</h1>
 
-      <Card title="Milvus 配置" style={{ marginBottom: 24 }}>
-        <Form
-          form={milvusForm}
-          layout="vertical"
-          onFinish={onSaveMilvus}
+      <Tabs defaultActiveKey="milvus" type="card">
+        <TabPane
+          tab={
+            <span>
+              <DatabaseOutlined />
+              Milvus 配置
+            </span>
+          }
+          key="milvus"
         >
-          <Form.Item
-            name="host"
-            label="Milvus Host"
-            rules={[{ required: true, message: '请输入 Milvus Host' }]}
-          >
-            <Input placeholder="localhost" />
-          </Form.Item>
-          <Form.Item
-            name="port"
-            label="Milvus Port"
-            rules={[{ required: true, message: '请输入 Milvus Port' }]}
-          >
-            <InputNumber
-              placeholder="19530"
-              style={{ width: '100%' }}
-              min={1}
-              max={65535}
-            />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" loading={loading}>
-              保存配置
-            </Button>
-          </Form.Item>
-        </Form>
-      </Card>
+          <Card>
+            <Form
+              form={milvusForm}
+              layout="vertical"
+              onFinish={onSaveMilvus}
+            >
+              <Form.Item
+                name="uri"
+                label="Milvus 地址"
+                rules={[{ required: true, message: '请输入 Milvus 地址' }]}
+                extra="Milvus 服务器地址，例如：http://localhost:19530"
+              >
+                <Input placeholder="http://localhost:19530" />
+              </Form.Item>
+              <Form.Item
+                name="user"
+                label="用户名"
+                extra="Milvus 用户名（可选，留空表示不使用用户名密码认证）"
+              >
+                <Input placeholder="请输入用户名" />
+              </Form.Item>
+              <Form.Item
+                name="password"
+                label="密码"
+                extra="Milvus 密码（可选）"
+              >
+                <Input.Password placeholder="请输入密码" />
+              </Form.Item>
+              <Form.Item
+                name="token"
+                label="Token"
+                extra="Milvus Token（可选，用于 Token 认证方式）"
+              >
+                <Input.Password placeholder="请输入 Token" />
+              </Form.Item>
+              <Form.Item
+                name="db_name"
+                label="数据库名称"
+                rules={[{ required: true, message: '请输入数据库名称' }]}
+                extra="Milvus 数据库名称"
+              >
+                <Input placeholder="default" />
+              </Form.Item>
+              <Form.Item
+                name="collection_name"
+                label="Collection 名称"
+                rules={[{ required: true, message: '请输入 Collection 名称' }]}
+                extra="用于存储向量的 Collection 名称"
+              >
+                <Input placeholder="test_cases" />
+              </Form.Item>
+              <Form.Item>
+                <Button type="primary" htmlType="submit" loading={loading}>
+                  保存配置
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
+        </TabPane>
 
-      <Card title="模型配置">
-        <Form
-          form={modelForm}
-          layout="vertical"
-          onFinish={onSaveModel}
+        <TabPane
+          tab={
+            <span>
+              <ApiOutlined />
+              模型配置
+            </span>
+          }
+          key="model"
         >
-          <Form.Item
-            name="api_key"
-            label="API Key"
-            rules={[{ required: true, message: '请输入 API Key' }]}
-            extra="支持 OpenAI、ModelScope 等兼容 OpenAI API 的服务"
-          >
-            <Input.Password placeholder="请输入 API Key" />
-          </Form.Item>
-          <Form.Item
-            name="api_base"
-            label="API Base URL"
-            rules={[{ required: true, message: '请输入 API Base URL' }]}
-            extra="例如: https://api.openai.com/v1 或 https://api-inference.modelscope.cn/v1/chat/completions"
-          >
-            <Input placeholder="https://api.openai.com/v1" />
-          </Form.Item>
-          <Form.Item
-            name="model_name"
-            label="模型名称"
-            rules={[{ required: true, message: '请输入模型名称' }]}
-            extra="例如: gpt-4, deepseek-ai/DeepSeek-V3.1 等"
-          >
-            <Input placeholder="gpt-4" />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" loading={loading}>
-              保存配置
-            </Button>
-          </Form.Item>
-        </Form>
-      </Card>
+          <Card>
+            <Form
+              form={modelForm}
+              layout="vertical"
+              onFinish={onSaveModel}
+            >
+              <Form.Item
+                name="api_key"
+                label="API Key"
+                rules={[{ required: true, message: '请输入 API Key' }]}
+                extra="支持 OpenAI、ModelScope 等兼容 OpenAI API 的服务"
+              >
+                <Input.Password placeholder="请输入 API Key" />
+              </Form.Item>
+              <Form.Item
+                name="api_base"
+                label="API Base URL"
+                rules={[{ required: true, message: '请输入 API Base URL' }]}
+                extra="例如: https://api.openai.com/v1 或 https://api-inference.modelscope.cn/v1/chat/completions"
+              >
+                <Input placeholder="https://api.openai.com/v1" />
+              </Form.Item>
+              <Form.Item
+                name="model_name"
+                label="模型名称"
+                rules={[{ required: true, message: '请输入模型名称' }]}
+                extra="例如: gpt-4, deepseek-ai/DeepSeek-V3.1 等"
+              >
+                <Input placeholder="gpt-4" />
+              </Form.Item>
+              <Form.Item>
+                <Button type="primary" htmlType="submit" loading={loading}>
+                  保存配置
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
+        </TabPane>
 
-      <Divider />
+        <TabPane
+          tab={
+            <span>
+              <FileTextOutlined />
+              Prompt 配置
+            </span>
+          }
+          key="prompt"
+        >
+          <Card>
+            <Form
+              form={promptForm}
+              layout="vertical"
+              onFinish={onSavePrompt}
+            >
+              <Form.Item
+                name="test_point_prompt"
+                label="测试点生成 Prompt"
+                rules={[{ required: true, message: '请输入测试点生成 Prompt' }]}
+                extra="用于从需求文档中提取测试点的 AI Prompt，支持使用 {feedback_instruction} 占位符"
+              >
+                <TextArea
+                  placeholder="请输入测试点生成 Prompt"
+                  rows={10}
+                  style={{ fontFamily: 'monospace' }}
+                />
+              </Form.Item>
+              <Form.Item
+                name="test_case_prompt"
+                label="测试用例生成 Prompt"
+                rules={[{ required: true, message: '请输入测试用例生成 Prompt' }]}
+                extra="用于根据测试点生成测试用例的 AI Prompt"
+              >
+                <TextArea
+                  placeholder="请输入测试用例生成 Prompt"
+                  rows={10}
+                  style={{ fontFamily: 'monospace' }}
+                />
+              </Form.Item>
+              <Form.Item>
+                <Button type="primary" htmlType="submit" loading={loading}>
+                  保存配置
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
+        </TabPane>
 
-      <Card title="用户管理">
-        <p>用户管理功能开发中...</p>
-      </Card>
+        <TabPane
+          tab={
+            <span>
+              <UserOutlined />
+              用户管理
+            </span>
+          }
+          key="users"
+        >
+          <Card>
+            <p>用户管理功能开发中...</p>
+          </Card>
+        </TabPane>
+      </Tabs>
     </div>
   )
 }

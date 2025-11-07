@@ -1,6 +1,7 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.db.session import get_db
 from app.api.deps import get_current_active_user
@@ -9,11 +10,22 @@ from app.models.test_case import TestCase
 from app.models.test_point import TestPoint
 from app.models.requirement import Requirement
 from app.schemas.test_case import TestCase as TestCaseSchema, TestCaseCreate, TestCaseUpdate
-from app.services.ai_service import ai_service
+from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.services.document_parser import DocumentParser
 
 router = APIRouter()
+
+
+def generate_test_case_code(db: Session, test_point: TestPoint) -> str:
+    """生成测试用例编号"""
+    # 获取该测试点下的测试用例数量
+    count = db.query(func.count(TestCase.id)).filter(
+        TestCase.test_point_id == test_point.id
+    ).scalar()
+
+    # 生成编号：测试点编号-序号
+    return f"{test_point.code}-{count + 1}"
 
 
 async def generate_test_cases_background(test_point_id: int, db: Session, user_id: int):
@@ -39,12 +51,15 @@ async def generate_test_cases_background(test_point_id: int, db: Session, user_i
         }
         
         # 使用 AI 生成测试用例
-        test_cases_data = ai_service.generate_test_cases(test_point_data, context)
+        ai_svc = get_ai_service(db)
+        test_cases_data = ai_svc.generate_test_cases(test_point_data, context)
         
         # 保存测试用例
         for tc_data in test_cases_data:
+            code = generate_test_case_code(db, test_point)
             test_case = TestCase(
                 test_point_id=test_point_id,
+                code=code,
                 title=tc_data.get('title', ''),
                 description=tc_data.get('description', ''),
                 preconditions=tc_data.get('preconditions', ''),
@@ -54,7 +69,8 @@ async def generate_test_cases_background(test_point_id: int, db: Session, user_i
                 test_type=tc_data.get('test_type', 'functional')
             )
             db.add(test_case)
-        
+            db.flush()  # 确保编号被保存
+
         db.commit()
         
         # 发送通知
@@ -66,7 +82,9 @@ async def generate_test_cases_background(test_point_id: int, db: Session, user_i
 
 @router.get("/", response_model=List[TestCaseSchema])
 def read_test_cases(
+    requirement_id: int = None,
     test_point_id: int = None,
+    search: str = None,
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
@@ -76,10 +94,25 @@ def read_test_cases(
     query = db.query(TestCase).join(TestPoint).join(Requirement).filter(
         Requirement.user_id == current_user.id
     )
-    
+
+    # 按需求筛选
+    if requirement_id:
+        query = query.filter(Requirement.id == requirement_id)
+
+    # 按测试点筛选
     if test_point_id:
         query = query.filter(TestCase.test_point_id == test_point_id)
-    
+
+    # 搜索功能
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            (TestCase.title.ilike(search_pattern)) |
+            (TestCase.description.ilike(search_pattern)) |
+            (TestCase.preconditions.ilike(search_pattern)) |
+            (TestCase.expected_result.ilike(search_pattern))
+        )
+
     test_cases = query.offset(skip).limit(limit).all()
     return test_cases
 
@@ -114,15 +147,18 @@ def create_test_case(
         TestPoint.id == test_case_in.test_point_id,
         Requirement.user_id == current_user.id
     ).first()
-    
+
     if not test_point:
         raise HTTPException(status_code=404, detail="Test point not found")
-    
-    test_case = TestCase(**test_case_in.model_dump())
+
+    # 生成编号
+    code = generate_test_case_code(db, test_point)
+
+    test_case = TestCase(**test_case_in.model_dump(), code=code)
     db.add(test_case)
     db.commit()
     db.refresh(test_case)
-    
+
     return test_case
 
 

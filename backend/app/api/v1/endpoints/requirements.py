@@ -14,7 +14,7 @@ from app.models.requirement import Requirement, FileType, RequirementStatus
 from app.schemas.requirement import Requirement as RequirementSchema, RequirementCreate, RequirementUpdate, RequirementWithStats
 from app.core.config import settings
 from app.services.document_parser import DocumentParser
-from app.services.ai_service import ai_service
+from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.models.test_point import TestPoint
 

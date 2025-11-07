@@ -237,18 +237,16 @@ export default function Requirements() {
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',
+      width: 80,
+      align: 'center' as const,
       render: (priority: string) => {
-        const colorMap: any = {
-          high: 'red',
-          medium: 'orange',
-          low: 'green',
+        const priorityMap: any = {
+          high: { color: 'red', text: '高' },
+          medium: { color: 'orange', text: '中' },
+          low: { color: 'green', text: '低' },
         }
-        const textMap: any = {
-          high: '高',
-          medium: '中',
-          low: '低',
-        }
-        return <Tag color={colorMap[priority]}>{textMap[priority]}</Tag>
+        const config = priorityMap[priority] || { color: 'default', text: priority }
+        return <Tag color={config.color}>{config.text}</Tag>
       },
     },
   ]

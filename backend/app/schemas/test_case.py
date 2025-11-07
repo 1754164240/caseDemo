@@ -36,6 +36,7 @@ class TestCaseUpdate(BaseModel):
 class TestCaseInDB(TestCaseBase):
     id: int
     test_point_id: int
+    code: str  # 测试用例编号
     created_at: datetime
     updated_at: Optional[datetime] = None
 

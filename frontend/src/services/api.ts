@@ -62,13 +62,24 @@ export const dashboardAPI = {
 export const systemConfigAPI = {
   // Milvus 配置
   getMilvusConfig: () => api.get('/system-config/milvus'),
-  updateMilvusConfig: (data: { host: string; port: number }) =>
-    api.put('/system-config/milvus', data),
+  updateMilvusConfig: (data: {
+    uri: string;
+    user: string;
+    password: string;
+    token: string;
+    db_name: string;
+    collection_name: string
+  }) => api.put('/system-config/milvus', data),
 
   // 模型配置
   getModelConfig: () => api.get('/system-config/model'),
   updateModelConfig: (data: { api_key: string; api_base: string; model_name: string }) =>
     api.put('/system-config/model', data),
+
+  // Prompt 配置
+  getPromptConfig: () => api.get('/system-config/prompts'),
+  updatePromptConfig: (data: { test_point_prompt: string; test_case_prompt: string }) =>
+    api.put('/system-config/prompts', data),
 
   // 通用配置
   listConfigs: () => api.get('/system-config/'),
