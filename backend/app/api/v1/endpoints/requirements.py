@@ -1,9 +1,11 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import os
 import shutil
 from datetime import datetime
+from urllib.parse import quote
 
 from app.db.session import get_db
 from app.api.deps import get_current_active_user
@@ -217,6 +219,48 @@ def update_requirement(
     return requirement
 
 
+@router.get("/{requirement_id}/download")
+def download_requirement(
+    requirement_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """下载需求文档"""
+    requirement = db.query(Requirement).filter(
+        Requirement.id == requirement_id,
+        Requirement.user_id == current_user.id
+    ).first()
+
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    # 检查文件是否存在
+    if not os.path.exists(requirement.file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # 对中文文件名进行 URL 编码
+    encoded_filename = quote(requirement.file_name)
+
+    # 返回文件
+    response = FileResponse(
+        path=requirement.file_path,
+        media_type='application/octet-stream'
+    )
+
+    # 设置 Content-Disposition header 以支持中文文件名
+    # 同时提供 filename 和 filename* 两种格式以提高兼容性
+    # filename: ASCII 回退（用下划线替换非 ASCII 字符）
+    # filename*: RFC 5987 格式，支持 UTF-8 编码
+    ascii_filename = requirement.file_name.encode('ascii', 'ignore').decode('ascii') or 'document'
+    response.headers["Content-Disposition"] = (
+        f"attachment; "
+        f"filename=\"{ascii_filename}\"; "
+        f"filename*=UTF-8''{encoded_filename}"
+    )
+
+    return response
+
+
 @router.delete("/{requirement_id}")
 def delete_requirement(
     requirement_id: int,
@@ -228,16 +272,16 @@ def delete_requirement(
         Requirement.id == requirement_id,
         Requirement.user_id == current_user.id
     ).first()
-    
+
     if not requirement:
         raise HTTPException(status_code=404, detail="Requirement not found")
-    
+
     # 删除文件
     if os.path.exists(requirement.file_path):
         os.remove(requirement.file_path)
-    
+
     db.delete(requirement)
     db.commit()
-    
+
     return {"message": "Requirement deleted successfully"}
 

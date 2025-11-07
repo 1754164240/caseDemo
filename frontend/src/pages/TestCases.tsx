@@ -30,6 +30,11 @@ export default function TestCases() {
   const [testCaseDrawerVisible, setTestCaseDrawerVisible] = useState(false)
   const [selectedTestCase, setSelectedTestCase] = useState<any>(null)
 
+  // 测试用例编辑
+  const [editTestCaseModalVisible, setEditTestCaseModalVisible] = useState(false)
+  const [editingTestCase, setEditingTestCase] = useState<any>(null)
+  const [editTestCaseForm] = Form.useForm()
+
   useEffect(() => {
     loadRequirements()
     loadTestPoints()
@@ -157,24 +162,68 @@ export default function TestCases() {
     setTestCaseDrawerVisible(true)
   }
 
+  const handleEditTestCase = (record: any) => {
+    setEditingTestCase(record)
+
+    // 处理 test_steps 字段
+    let testStepsValue = record.test_steps
+    if (Array.isArray(testStepsValue)) {
+      // 如果是对象数组，转换为字符串
+      testStepsValue = testStepsValue.map((item: any, index: number) => {
+        if (typeof item === 'object' && item !== null) {
+          return `${index + 1}. ${item.action || ''} - 预期: ${item.expected || ''}`
+        }
+        return item
+      }).join('\n')
+    }
+
+    editTestCaseForm.setFieldsValue({
+      title: record.title,
+      description: record.description,
+      preconditions: record.preconditions,
+      test_steps: testStepsValue,
+      expected_result: record.expected_result,
+      priority: record.priority,
+      test_type: record.test_type,
+    })
+    setEditTestCaseModalVisible(true)
+  }
+
+  const handleUpdateTestCase = async () => {
+    try {
+      const values = await editTestCaseForm.validateFields()
+      await testCasesAPI.update(editingTestCase.id, values)
+      message.success('更新成功')
+      setEditTestCaseModalVisible(false)
+      setEditingTestCase(null)
+      editTestCaseForm.resetFields()
+      loadTestCases()
+    } catch (error) {
+      message.error('更新失败')
+    }
+  }
+
   const testPointColumns = [
     {
       title: 'ID',
       dataIndex: 'id',
       key: 'id',
-      width: 80,
+      width: 60,
+      fixed: 'left' as const,
     },
     {
       title: '标题',
       dataIndex: 'title',
       key: 'title',
-      width: 200,
+      width: 180,
+      ellipsis: true,
     },
     {
       title: '所属需求',
       dataIndex: 'requirement_id',
       key: 'requirement_id',
-      width: 200,
+      width: 150,
+      ellipsis: true,
       render: (requirementId: number) => {
         const requirement = requirements.find((req: any) => req.id === requirementId)
         return requirement ? (
@@ -189,22 +238,28 @@ export default function TestCases() {
       dataIndex: 'description',
       key: 'description',
       ellipsis: true,
+      width: 250,
     },
     {
       title: '分类',
       dataIndex: 'category',
       key: 'category',
-      width: 120,
-      render: (text: string) => text ? <Tag>{text}</Tag> : '-',
+      width: 100,
+      render: (text: string) => text ? <Tag color="blue">{text}</Tag> : '-',
     },
     {
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',
-      width: 100,
+      width: 80,
       render: (priority: string) => {
-        const colorMap: any = { high: 'red', medium: 'orange', low: 'blue' }
-        return <Tag color={colorMap[priority]}>{priority}</Tag>
+        const priorityMap: any = {
+          high: { color: 'red', text: '高' },
+          medium: { color: 'orange', text: '中' },
+          low: { color: 'green', text: '低' },
+        }
+        const config = priorityMap[priority] || { color: 'default', text: priority }
+        return <Tag color={config.color}>{config.text}</Tag>
       },
     },
     {
@@ -212,6 +267,7 @@ export default function TestCases() {
       dataIndex: 'test_cases_count',
       key: 'test_cases_count',
       width: 80,
+      align: 'center' as const,
     },
     {
       title: '创建时间',
@@ -263,18 +319,21 @@ export default function TestCases() {
       dataIndex: 'id',
       key: 'id',
       width: 60,
+      fixed: 'left' as const,
     },
     {
       title: '标题',
       dataIndex: 'title',
       key: 'title',
       width: 180,
+      ellipsis: true,
     },
     {
       title: '所属需求',
       dataIndex: 'test_point_id',
       key: 'requirement',
-      width: 150,
+      width: 140,
+      ellipsis: true,
       render: (testPointId: number) => {
         const testPoint = testPoints.find((tp: any) => tp.id === testPointId)
         if (!testPoint) return <span>-</span>
@@ -291,7 +350,8 @@ export default function TestCases() {
       title: '所属测试点',
       dataIndex: 'test_point_id',
       key: 'test_point_id',
-      width: 150,
+      width: 140,
+      ellipsis: true,
       render: (testPointId: number) => {
         const testPoint = testPoints.find((tp: any) => tp.id === testPointId)
         return testPoint ? (
@@ -306,24 +366,30 @@ export default function TestCases() {
       dataIndex: 'description',
       key: 'description',
       ellipsis: true,
-      width: 200,
+      width: 220,
     },
     {
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',
-      width: 100,
+      width: 80,
+      align: 'center' as const,
       render: (priority: string) => {
-        const colorMap: any = { high: 'red', medium: 'orange', low: 'blue' }
-        return <Tag color={colorMap[priority]}>{priority}</Tag>
+        const priorityMap: any = {
+          high: { color: 'red', text: '高' },
+          medium: { color: 'orange', text: '中' },
+          low: { color: 'green', text: '低' },
+        }
+        const config = priorityMap[priority] || { color: 'default', text: priority }
+        return <Tag color={config.color}>{config.text}</Tag>
       },
     },
     {
       title: '测试类型',
       dataIndex: 'test_type',
       key: 'test_type',
-      width: 120,
-      render: (text: string) => <Tag color="cyan">{text}</Tag>,
+      width: 100,
+      render: (text: string) => text ? <Tag color="cyan">{text}</Tag> : '-',
     },
     {
       title: '创建时间',
@@ -346,7 +412,12 @@ export default function TestCases() {
           >
             查看
           </Button>
-          <Button type="link" icon={<EditOutlined />} size="small">
+          <Button
+            type="link"
+            icon={<EditOutlined />}
+            size="small"
+            onClick={() => handleEditTestCase(record)}
+          >
             编辑
           </Button>
           <Popconfirm
@@ -397,6 +468,7 @@ export default function TestCases() {
             columns={testPointColumns}
             rowKey="id"
             loading={loading}
+            scroll={{ x: 1400 }}
             pagination={{
               pageSize: 10,
               showSizeChanger: true,
@@ -457,6 +529,7 @@ export default function TestCases() {
             columns={testCaseColumns}
             rowKey="id"
             loading={loading}
+            scroll={{ x: 1400 }}
             pagination={{
               pageSize: 10,
               showSizeChanger: true,
@@ -496,8 +569,13 @@ export default function TestCases() {
               <Descriptions.Item label="优先级">
                 {(() => {
                   const priority = selectedTestPoint.priority
-                  const colorMap: any = { high: 'red', medium: 'orange', low: 'blue' }
-                  return <Tag color={colorMap[priority]}>{priority}</Tag>
+                  const priorityMap: any = {
+                    high: { color: 'red', text: '高' },
+                    medium: { color: 'orange', text: '中' },
+                    low: { color: 'green', text: '低' },
+                  }
+                  const config = priorityMap[priority] || { color: 'default', text: priority }
+                  return <Tag color={config.color}>{config.text}</Tag>
                 })()}
               </Descriptions.Item>
               <Descriptions.Item label="用例数量">
@@ -543,8 +621,13 @@ export default function TestCases() {
                     key: 'priority',
                     width: 80,
                     render: (priority: string) => {
-                      const colorMap: any = { high: 'red', medium: 'orange', low: 'blue' }
-                      return <Tag color={colorMap[priority]}>{priority}</Tag>
+                      const priorityMap: any = {
+                        high: { color: 'red', text: '高' },
+                        medium: { color: 'orange', text: '中' },
+                        low: { color: 'green', text: '低' },
+                      }
+                      const config = priorityMap[priority] || { color: 'default', text: priority }
+                      return <Tag color={config.color}>{config.text}</Tag>
                     },
                   },
                   {
@@ -596,8 +679,13 @@ export default function TestCases() {
             <Descriptions.Item label="优先级">
               {(() => {
                 const priority = selectedTestCase.priority
-                const colorMap: any = { high: 'red', medium: 'orange', low: 'blue' }
-                return <Tag color={colorMap[priority]}>{priority}</Tag>
+                const priorityMap: any = {
+                  high: { color: 'red', text: '高' },
+                  medium: { color: 'orange', text: '中' },
+                  low: { color: 'green', text: '低' },
+                }
+                const config = priorityMap[priority] || { color: 'default', text: priority }
+                return <Tag color={config.color}>{config.text}</Tag>
               })()}
             </Descriptions.Item>
             <Descriptions.Item label="测试类型">
@@ -605,17 +693,60 @@ export default function TestCases() {
             </Descriptions.Item>
             <Descriptions.Item label="前置条件">
               <div style={{ whiteSpace: 'pre-wrap' }}>
-                {selectedTestCase.preconditions || '无'}
+                {(() => {
+                  const preconditions = selectedTestCase.preconditions
+                  if (!preconditions) return '无'
+                  if (typeof preconditions === 'string') return preconditions
+                  if (Array.isArray(preconditions)) {
+                    return preconditions.map((item: any, index: number) => (
+                      <div key={index}>{typeof item === 'string' ? item : JSON.stringify(item)}</div>
+                    ))
+                  }
+                  return JSON.stringify(preconditions)
+                })()}
               </div>
             </Descriptions.Item>
             <Descriptions.Item label="测试步骤">
               <div style={{ whiteSpace: 'pre-wrap' }}>
-                {selectedTestCase.test_steps || '无'}
+                {(() => {
+                  const testSteps = selectedTestCase.test_steps
+                  if (!testSteps) return '无'
+                  if (typeof testSteps === 'string') return testSteps
+                  if (Array.isArray(testSteps)) {
+                    return testSteps.map((item: any, index: number) => {
+                      if (typeof item === 'string') {
+                        return <div key={index} style={{ marginBottom: 8 }}>{item}</div>
+                      }
+                      // 如果是对象，格式化显示
+                      if (typeof item === 'object' && item !== null) {
+                        return (
+                          <div key={index} style={{ marginBottom: 12, paddingLeft: 8, borderLeft: '2px solid #1890ff' }}>
+                            {item.step && <div><strong>步骤 {item.step}:</strong></div>}
+                            {item.action && <div>操作: {item.action}</div>}
+                            {item.expected && <div>预期: {item.expected}</div>}
+                          </div>
+                        )
+                      }
+                      return <div key={index}>{JSON.stringify(item)}</div>
+                    })
+                  }
+                  return JSON.stringify(testSteps)
+                })()}
               </div>
             </Descriptions.Item>
             <Descriptions.Item label="预期结果">
               <div style={{ whiteSpace: 'pre-wrap' }}>
-                {selectedTestCase.expected_result || '无'}
+                {(() => {
+                  const expectedResult = selectedTestCase.expected_result
+                  if (!expectedResult) return '无'
+                  if (typeof expectedResult === 'string') return expectedResult
+                  if (Array.isArray(expectedResult)) {
+                    return expectedResult.map((item: any, index: number) => (
+                      <div key={index}>{typeof item === 'string' ? item : JSON.stringify(item)}</div>
+                    ))
+                  }
+                  return JSON.stringify(expectedResult)
+                })()}
               </div>
             </Descriptions.Item>
             <Descriptions.Item label="创建时间">
@@ -624,6 +755,62 @@ export default function TestCases() {
           </Descriptions>
         )}
       </Drawer>
+
+      {/* 编辑测试用例 Modal */}
+      <Modal
+        title="编辑测试用例"
+        open={editTestCaseModalVisible}
+        onOk={handleUpdateTestCase}
+        onCancel={() => {
+          setEditTestCaseModalVisible(false)
+          setEditingTestCase(null)
+          editTestCaseForm.resetFields()
+        }}
+        width={800}
+        okText="保存"
+        cancelText="取消"
+      >
+        <Form form={editTestCaseForm} layout="vertical">
+          <Form.Item
+            label="标题"
+            name="title"
+            rules={[{ required: true, message: '请输入标题' }]}
+          >
+            <Input placeholder="请输入测试用例标题" />
+          </Form.Item>
+
+          <Form.Item label="描述" name="description">
+            <Input.TextArea rows={3} placeholder="请输入描述" />
+          </Form.Item>
+
+          <Form.Item label="前置条件" name="preconditions">
+            <Input.TextArea rows={3} placeholder="请输入前置条件" />
+          </Form.Item>
+
+          <Form.Item label="测试步骤" name="test_steps">
+            <Input.TextArea
+              rows={6}
+              placeholder="请输入测试步骤，每行一个步骤"
+            />
+          </Form.Item>
+
+          <Form.Item label="预期结果" name="expected_result">
+            <Input.TextArea rows={3} placeholder="请输入预期结果" />
+          </Form.Item>
+
+          <Form.Item label="优先级" name="priority">
+            <Select>
+              <Select.Option value="high">高</Select.Option>
+              <Select.Option value="medium">中</Select.Option>
+              <Select.Option value="low">低</Select.Option>
+            </Select>
+          </Form.Item>
+
+          <Form.Item label="测试类型" name="test_type">
+            <Input placeholder="如：功能测试、性能测试等" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   )
 }

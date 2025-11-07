@@ -4,7 +4,7 @@
 
 智能测试用例平台是一个基于 AI 的自动化测试用例生成系统，专为保险行业设计。用户可以上传需求文档，系统会自动识别测试点并生成详细的测试用例，大幅提升测试工作效率。
 
-### 核心功能
+### 核心功能 
 
 - 📄 **需求文档上传**：支持 DOCX、PDF、TXT、XLS、XLSX 等多种格式
 - 🤖 **AI 智能识别**：使用 LangGraph 和 LangChain 自动识别测试点
@@ -95,7 +95,7 @@ docker-compose up -d
 
 Windows:
 ```bash
-install-backend.bat
+bat\install-backend.bat
 ```
 
 或手动安装:
@@ -128,7 +128,7 @@ MILVUS_PORT=19530
 
 Windows:
 ```bash
-start-backend.bat
+bat\start-backend.bat
 ```
 
 或手动启动:
@@ -144,7 +144,7 @@ API 文档：http://localhost:8000/docs
 
 Windows:
 ```bash
-install-frontend.bat
+bat\install-frontend.bat
 ```
 
 或手动安装:
@@ -157,7 +157,7 @@ npm install
 
 Windows:
 ```bash
-start-frontend.bat
+bat\start-frontend.bat
 ```
 
 或手动启动:

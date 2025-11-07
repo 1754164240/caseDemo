@@ -21,13 +21,25 @@ async def regenerate_test_points_background(requirement_id: int, user_feedback: 
         requirement = db.query(Requirement).filter(Requirement.id == requirement_id).first()
         if not requirement:
             return
-        
+
+        # 更新状态为处理中
+        requirement.status = RequirementStatus.PROCESSING
+        db.commit()
+
+        print(f"[INFO] 开始重新生成测试点，需求 ID: {requirement_id}")
+
         # 解析文档
         text = DocumentParser.parse(requirement.file_path, requirement.file_type.value)
-        
+        if not text:
+            raise Exception("Failed to parse document")
+
+        print(f"[INFO] 文档解析成功，文本长度: {len(text)}")
+
         # 使用 AI 重新生成测试点（带用户反馈）
         test_points_data = ai_service.extract_test_points(text, user_feedback)
-        
+
+        print(f"[INFO] 成功生成 {len(test_points_data)} 个测试点")
+
         # 保存新的测试点
         for tp_data in test_points_data:
             test_point = TestPoint(
@@ -39,14 +51,29 @@ async def regenerate_test_points_background(requirement_id: int, user_feedback: 
                 user_feedback=user_feedback
             )
             db.add(test_point)
-        
+
+        # 更新需求状态为已完成
+        requirement.status = RequirementStatus.COMPLETED
         db.commit()
-        
+
+        print(f"[INFO] 测试点重新生成完成，需求 ID: {requirement_id}")
+
         # 发送通知
         await manager.notify_test_point_generated(user_id, requirement_id, len(test_points_data))
-        
+
     except Exception as e:
-        print(f"Error regenerating test points: {e}")
+        print(f"[ERROR] 重新生成测试点失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+        # 更新状态为失败
+        try:
+            requirement = db.query(Requirement).filter(Requirement.id == requirement_id).first()
+            if requirement:
+                requirement.status = RequirementStatus.FAILED
+                db.commit()
+        except Exception as update_error:
+            print(f"[ERROR] 更新状态失败: {update_error}")
 
 
 @router.get("/", response_model=List[TestPointWithCases])

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Table, Button, Upload, Modal, Form, Input, message, Tag, Space, Popconfirm, Descriptions, Drawer } from 'antd'
-import { UploadOutlined, EyeOutlined, DeleteOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { UploadOutlined, EyeOutlined, DeleteOutlined, ThunderboltOutlined, DownloadOutlined } from '@ant-design/icons'
 import { requirementsAPI, testPointsAPI } from '../services/api'
 import dayjs from 'dayjs'
 
@@ -94,6 +94,16 @@ export default function Requirements() {
       }, 1000)
     } catch (error: any) {
       message.error(error.response?.data?.detail || '生成测试点失败')
+    }
+  }
+
+  const handleDownload = async (requirementId: number, fileName: string) => {
+    try {
+      message.loading({ content: '正在下载...', key: 'download' })
+      await requirementsAPI.download(requirementId, fileName)
+      message.success({ content: '下载成功', key: 'download' })
+    } catch (error) {
+      message.error({ content: '下载失败', key: 'download' })
     }
   }
 
@@ -327,7 +337,14 @@ export default function Requirements() {
                 {selectedRequirement.description || '无'}
               </Descriptions.Item>
               <Descriptions.Item label="文件名">
-                {selectedRequirement.file_name}
+                <Button
+                  type="link"
+                  icon={<DownloadOutlined />}
+                  onClick={() => handleDownload(selectedRequirement.id, selectedRequirement.file_name)}
+                  style={{ padding: 0 }}
+                >
+                  {selectedRequirement.file_name}
+                </Button>
               </Descriptions.Item>
               <Descriptions.Item label="文件类型">
                 <Tag>{selectedRequirement.file_type?.toUpperCase()}</Tag>

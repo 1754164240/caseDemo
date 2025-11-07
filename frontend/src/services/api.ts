@@ -85,6 +85,55 @@ export const requirementsAPI = {
   }),
   update: (id: number, data: any) => api.put(`/requirements/${id}`, data),
   delete: (id: number) => api.delete(`/requirements/${id}`),
+  download: (id: number, fileName?: string) => {
+    const token = useAuthStore.getState().token
+    const url = `/api/v1/requirements/${id}/download`
+
+    return fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    }).then(response => {
+      if (!response.ok) {
+        throw new Error('Download failed')
+      }
+
+      // 从响应头获取文件名
+      let downloadFileName = fileName || 'document'
+      const contentDisposition = response.headers.get('Content-Disposition')
+
+      if (contentDisposition) {
+        // 优先解析 RFC 5987 格式的 filename* (支持 UTF-8 编码)
+        // 格式: filename*=UTF-8''%E6%96%B0%E4%BA%A7%E5%93%81.xlsx
+        const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''(.+?)(?:;|$)/i)
+        if (filenameStarMatch && filenameStarMatch[1]) {
+          try {
+            // URL 解码
+            downloadFileName = decodeURIComponent(filenameStarMatch[1])
+          } catch (e) {
+            console.error('Failed to decode filename:', e)
+          }
+        } else {
+          // 回退到标准 filename 参数
+          const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+          if (filenameMatch && filenameMatch[1]) {
+            downloadFileName = filenameMatch[1].replace(/['"]/g, '')
+          }
+        }
+      }
+
+      return response.blob().then(blob => ({ blob, fileName: downloadFileName }))
+    }).then(({ blob, fileName: downloadFileName }) => {
+      const blobUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = downloadFileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(blobUrl)
+    })
+  },
 }
 
 export const testPointsAPI = {
