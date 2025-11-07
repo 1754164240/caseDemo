@@ -634,8 +634,8 @@ export default function TestCases() {
         {selectedTestPoint && (
           <>
             <Descriptions bordered column={1} style={{ marginBottom: 24 }}>
-              <Descriptions.Item label="ID">
-                {selectedTestPoint.id}
+              <Descriptions.Item label="测试点编号">
+                {selectedTestPoint.code}
               </Descriptions.Item>
               <Descriptions.Item label="标题">
                 {selectedTestPoint.title}
@@ -686,10 +686,10 @@ export default function TestCases() {
                 dataSource={testPointCases}
                 columns={[
                   {
-                    title: 'ID',
-                    dataIndex: 'id',
-                    key: 'id',
-                    width: 60,
+                    title: '测试用例编号',
+                    dataIndex: 'code',
+                    key: 'code',
+                    width: 140,
                   },
                   {
                     title: '标题',
@@ -761,8 +761,8 @@ export default function TestCases() {
       >
         {selectedTestCase && (
           <Descriptions bordered column={1}>
-            <Descriptions.Item label="ID">
-              {selectedTestCase.id}
+            <Descriptions.Item label="测试用例编号">
+              {selectedTestCase.code}
             </Descriptions.Item>
             <Descriptions.Item label="标题">
               {selectedTestCase.title}

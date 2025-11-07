@@ -211,10 +211,10 @@ export default function Requirements() {
 
   const testPointColumns = [
     {
-      title: 'ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 80,
+      title: '测试点编号',
+      dataIndex: 'code',
+      key: 'code',
+      width: 120,
     },
     {
       title: '标题',
