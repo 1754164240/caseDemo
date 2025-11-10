@@ -45,6 +45,9 @@ export default function Settings() {
       promptForm.setFieldsValue({
         test_point_prompt: promptResponse.data.test_point_prompt,
         test_case_prompt: promptResponse.data.test_case_prompt,
+        contract_test_case_prompt: promptResponse.data.contract_test_case_prompt,
+        preservation_test_case_prompt: promptResponse.data.preservation_test_case_prompt,
+        claim_test_case_prompt: promptResponse.data.claim_test_case_prompt,
       })
     } catch (error: any) {
       console.error('加载配置失败:', error)
@@ -97,6 +100,9 @@ export default function Settings() {
       await systemConfigAPI.updatePromptConfig({
         test_point_prompt: values.test_point_prompt,
         test_case_prompt: values.test_case_prompt,
+        contract_test_case_prompt: values.contract_test_case_prompt,
+        preservation_test_case_prompt: values.preservation_test_case_prompt,
+        claim_test_case_prompt: values.claim_test_case_prompt,
       })
       message.success('Prompt 配置保存成功')
     } catch (error: any) {
@@ -256,7 +262,7 @@ export default function Settings() {
                 name="test_point_prompt"
                 label="测试点生成 Prompt"
                 rules={[{ required: true, message: '请输入测试点生成 Prompt' }]}
-                extra="用于从需求文档中提取测试点的 AI Prompt，支持使用 {feedback_instruction} 占位符"
+                extra="用于从需求文档中提取测试点的 AI Prompt，支持使用 {feedback_instruction} 占位符，会自动识别业务线"
               >
                 <TextArea
                   placeholder="请输入测试点生成 Prompt"
@@ -264,18 +270,59 @@ export default function Settings() {
                   style={{ fontFamily: 'monospace' }}
                 />
               </Form.Item>
+
               <Form.Item
                 name="test_case_prompt"
-                label="测试用例生成 Prompt"
-                rules={[{ required: true, message: '请输入测试用例生成 Prompt' }]}
-                extra="用于根据测试点生成测试用例的 AI Prompt"
+                label="默认测试用例生成 Prompt"
+                rules={[{ required: true, message: '请输入默认测试用例生成 Prompt' }]}
+                extra="用于生成通用测试用例的 AI Prompt（当业务线未识别时使用）"
               >
                 <TextArea
-                  placeholder="请输入测试用例生成 Prompt"
-                  rows={10}
+                  placeholder="请输入默认测试用例生成 Prompt"
+                  rows={8}
                   style={{ fontFamily: 'monospace' }}
                 />
               </Form.Item>
+
+              <Form.Item
+                name="contract_test_case_prompt"
+                label="契约业务线测试用例 Prompt"
+                rules={[{ required: true, message: '请输入契约业务线测试用例 Prompt' }]}
+                extra="专门用于契约业务的测试用例生成，关注投保、核保、保单生成等流程"
+              >
+                <TextArea
+                  placeholder="请输入契约业务线测试用例 Prompt"
+                  rows={8}
+                  style={{ fontFamily: 'monospace' }}
+                />
+              </Form.Item>
+
+              <Form.Item
+                name="preservation_test_case_prompt"
+                label="保全业务线测试用例 Prompt"
+                rules={[{ required: true, message: '请输入保全业务线测试用例 Prompt' }]}
+                extra="专门用于保全业务的测试用例生成，关注保单变更、批改、续保等流程"
+              >
+                <TextArea
+                  placeholder="请输入保全业务线测试用例 Prompt"
+                  rows={8}
+                  style={{ fontFamily: 'monospace' }}
+                />
+              </Form.Item>
+
+              <Form.Item
+                name="claim_test_case_prompt"
+                label="理赔业务线测试用例 Prompt"
+                rules={[{ required: true, message: '请输入理赔业务线测试用例 Prompt' }]}
+                extra="专门用于理赔业务的测试用例生成，关注理赔申请、审核、支付等流程"
+              >
+                <TextArea
+                  placeholder="请输入理赔业务线测试用例 Prompt"
+                  rows={8}
+                  style={{ fontFamily: 'monospace' }}
+                />
+              </Form.Item>
+
               <Form.Item>
                 <Button type="primary" htmlType="submit" loading={loading}>
                   保存配置

@@ -92,7 +92,8 @@ async def process_requirement_background(requirement_id: int, db: Session, user_
                 title=tp_data.get('title', ''),
                 description=tp_data.get('description', ''),
                 category=tp_data.get('category', ''),
-                priority=tp_data.get('priority', 'medium')
+                priority=tp_data.get('priority', 'medium'),
+                business_line=tp_data.get('business_line', '')
             )
             db.add(test_point)
             db.flush()  # 确保编号被保存，以便下一个测试点能获取正确的编号

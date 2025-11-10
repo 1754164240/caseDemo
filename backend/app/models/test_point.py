@@ -14,6 +14,7 @@ class TestPoint(Base):
     description = Column(Text)
     category = Column(String(100))
     priority = Column(String(20))  # high, medium, low
+    business_line = Column(String(50))  # 业务线：contract(契约)/preservation(保全)/claim(理赔)
     is_approved = Column(Boolean, default=False)  # 保留用于兼容性
     user_feedback = Column(Text)  # 用户修改意见
 

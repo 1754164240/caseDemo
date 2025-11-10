@@ -68,6 +68,7 @@ async def regenerate_test_points_background(requirement_id: int, user_feedback: 
                 description=tp_data.get('description', ''),
                 category=tp_data.get('category', ''),
                 priority=tp_data.get('priority', 'medium'),
+                business_line=tp_data.get('business_line', ''),
                 user_feedback=user_feedback
             )
             db.add(test_point)

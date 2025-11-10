@@ -8,6 +8,7 @@ class TestPointBase(BaseModel):
     description: Optional[str] = None
     category: Optional[str] = None
     priority: Optional[str] = "medium"
+    business_line: Optional[str] = None  # contract(契约)/preservation(保全)/claim(理赔)
 
 
 class TestPointCreate(TestPointBase):
@@ -19,6 +20,7 @@ class TestPointUpdate(BaseModel):
     description: Optional[str] = None
     category: Optional[str] = None
     priority: Optional[str] = None
+    business_line: Optional[str] = None
     is_approved: Optional[bool] = None
     user_feedback: Optional[str] = None
 

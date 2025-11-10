@@ -77,11 +77,12 @@ class AIService:
 - description: 详细描述
 - category: 分类（功能/边界/异常/业务规则）
 - priority: 优先级（high/medium/low）
+- business_line: 业务线（contract-契约/preservation-保全/claim-理赔），根据需求内容判断属于哪个业务线
 
 返回格式示例：
 [
-  {{"title": "测试点1", "description": "描述1", "category": "功能", "priority": "high"}},
-  {{"title": "测试点2", "description": "描述2", "category": "边界", "priority": "medium"}}
+  {{"title": "测试点1", "description": "描述1", "category": "功能", "priority": "high", "business_line": "contract"}},
+  {{"title": "测试点2", "description": "描述2", "category": "边界", "priority": "medium", "business_line": "preservation"}}
 ]
 
 {feedback_instruction}"""
@@ -138,20 +139,24 @@ class AIService:
                 "title": "功能测试点示例",
                 "description": "这是一个示例测试点，AI 解析失败时显示",
                 "category": "功能",
-                "priority": "high"
+                "priority": "high",
+                "business_line": "contract"
             },
             {
                 "title": "边界测试点示例",
                 "description": "请检查 OpenAI API Key 配置和网络连接",
                 "category": "边界",
-                "priority": "medium"
+                "priority": "medium",
+                "business_line": "preservation"
             }
         ]
     
     def generate_test_cases(self, test_point: Dict[str, Any], requirement_context: str = "") -> List[Dict[str, Any]]:
         """根据测试点生成测试用例"""
 
-        # 从数据库获取 Prompt 配置
+        # 根据业务线选择对应的 Prompt
+        business_line = test_point.get('business_line', '')
+
         default_prompt = """你是一个专业的测试用例设计专家。请根据测试点生成详细的测试用例。
 
 测试用例应该包含：
@@ -165,7 +170,21 @@ class AIService:
 
 请以JSON格式返回测试用例列表。"""
 
-        system_prompt = self._get_prompt_from_db("TEST_CASE_PROMPT", default_prompt)
+        # 根据业务线选择对应的 Prompt 配置键
+        if business_line == 'contract':
+            prompt_key = "CONTRACT_TEST_CASE_PROMPT"
+            print(f"[INFO] 使用契约业务线 Prompt 生成测试用例")
+        elif business_line == 'preservation':
+            prompt_key = "PRESERVATION_TEST_CASE_PROMPT"
+            print(f"[INFO] 使用保全业务线 Prompt 生成测试用例")
+        elif business_line == 'claim':
+            prompt_key = "CLAIM_TEST_CASE_PROMPT"
+            print(f"[INFO] 使用理赔业务线 Prompt 生成测试用例")
+        else:
+            prompt_key = "TEST_CASE_PROMPT"
+            print(f"[INFO] 使用默认 Prompt 生成测试用例")
+
+        system_prompt = self._get_prompt_from_db(prompt_key, default_prompt)
 
         prompt_template = ChatPromptTemplate.from_messages([
             ("system", system_prompt),

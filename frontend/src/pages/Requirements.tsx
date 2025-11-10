@@ -234,6 +234,25 @@ export default function Requirements() {
       render: (category: string) => <Tag color="blue">{category}</Tag>,
     },
     {
+      title: '业务线',
+      dataIndex: 'business_line',
+      key: 'business_line',
+      width: 90,
+      align: 'center' as const,
+      render: (businessLine: string) => {
+        if (!businessLine) return <Tag color="default">未识别</Tag>
+
+        const businessLineMap: Record<string, { label: string; color: string }> = {
+          contract: { label: '契约', color: 'blue' },
+          preservation: { label: '保全', color: 'green' },
+          claim: { label: '理赔', color: 'orange' },
+        }
+
+        const config = businessLineMap[businessLine] || { label: businessLine, color: 'default' }
+        return <Tag color={config.color}>{config.label}</Tag>
+      },
+    },
+    {
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',

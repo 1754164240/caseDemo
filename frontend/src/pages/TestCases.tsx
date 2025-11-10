@@ -357,6 +357,25 @@ export default function TestCases() {
       render: (text: string) => text ? <Tag color="blue">{text}</Tag> : '-',
     },
     {
+      title: '业务线',
+      dataIndex: 'business_line',
+      key: 'business_line',
+      width: 90,
+      align: 'center' as const,
+      render: (businessLine: string) => {
+        if (!businessLine) return <Tag color="default">未识别</Tag>
+
+        const businessLineMap: Record<string, { label: string; color: string }> = {
+          contract: { label: '契约', color: 'blue' },
+          preservation: { label: '保全', color: 'green' },
+          claim: { label: '理赔', color: 'orange' },
+        }
+
+        const config = businessLineMap[businessLine] || { label: businessLine, color: 'default' }
+        return <Tag color={config.color}>{config.label}</Tag>
+      },
+    },
+    {
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',
@@ -678,7 +697,7 @@ export default function TestCases() {
             columns={testPointColumns}
             rowKey="id"
             loading={loading}
-            scroll={{ x: 1400 }}
+            scroll={{ x: 1500 }}
             pagination={{
               pageSize: 10,
               showSizeChanger: true,
@@ -800,6 +819,21 @@ export default function TestCases() {
               </Descriptions.Item>
               <Descriptions.Item label="分类">
                 <Tag>{selectedTestPoint.category}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="业务线">
+                {(() => {
+                  const businessLine = selectedTestPoint.business_line
+                  if (!businessLine) return <Tag color="default">未识别</Tag>
+
+                  const businessLineMap: Record<string, { label: string; color: string }> = {
+                    contract: { label: '契约', color: 'blue' },
+                    preservation: { label: '保全', color: 'green' },
+                    claim: { label: '理赔', color: 'orange' },
+                  }
+
+                  const config = businessLineMap[businessLine] || { label: businessLine, color: 'default' }
+                  return <Tag color={config.color}>{config.label}</Tag>
+                })()}
               </Descriptions.Item>
               <Descriptions.Item label="优先级">
                 {(() => {

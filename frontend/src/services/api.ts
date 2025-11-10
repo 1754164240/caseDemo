@@ -78,7 +78,13 @@ export const systemConfigAPI = {
 
   // Prompt 配置
   getPromptConfig: () => api.get('/system-config/prompts'),
-  updatePromptConfig: (data: { test_point_prompt: string; test_case_prompt: string }) =>
+  updatePromptConfig: (data: {
+    test_point_prompt: string;
+    test_case_prompt: string;
+    contract_test_case_prompt: string;
+    preservation_test_case_prompt: string;
+    claim_test_case_prompt: string;
+  }) =>
     api.put('/system-config/prompts', data),
 
   // 通用配置

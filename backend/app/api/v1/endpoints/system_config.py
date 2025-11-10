@@ -55,6 +55,63 @@ DEFAULT_TEST_CASE_PROMPT = """你是一个专业的测试用例设计专家。�
 
 请以JSON格式返回测试用例列表。"""
 
+# 契约业务线测试用例 Prompt
+DEFAULT_CONTRACT_TEST_CASE_PROMPT = """你是一个专业的保险契约业务测试专家。请根据测试点生成详细的契约业务测试用例。
+
+契约业务特点：
+- 关注投保流程、保单生成、保费计算
+- 重点验证保险条款、责任范围、除外责任
+- 注意核保规则、风险评估、保单承保
+
+测试用例应该包含：
+- title: 用例标题
+- description: 用例描述
+- preconditions: 前置条件（如：客户信息、产品配置）
+- test_steps: 测试步骤（数组格式，每步包含 step, action, expected）
+- expected_result: 预期结果
+- priority: 优先级
+- test_type: 测试类型
+
+请以JSON格式返回测试用例列表。"""
+
+# 保全业务线测试用例 Prompt
+DEFAULT_PRESERVATION_TEST_CASE_PROMPT = """你是一个专业的保险保全业务测试专家。请根据测试点生成详细的保全业务测试用例。
+
+保全业务特点：
+- 关注保单变更、批改、续保流程
+- 重点验证保单信息修改、受益人变更、保额调整
+- 注意保全规则、生效时间、费用计算
+
+测试用例应该包含：
+- title: 用例标题
+- description: 用例描述
+- preconditions: 前置条件（如：有效保单、变更申请）
+- test_steps: 测试步骤（数组格式，每步包含 step, action, expected）
+- expected_result: 预期结果
+- priority: 优先级
+- test_type: 测试类型
+
+请以JSON格式返回测试用例列表。"""
+
+# 理赔业务线测试用例 Prompt
+DEFAULT_CLAIM_TEST_CASE_PROMPT = """你是一个专业的保险理赔业务测试专家。请根据测试点生成详细的理赔业务测试用例。
+
+理赔业务特点：
+- 关注理赔申请、审核、支付流程
+- 重点验证理赔条件、责任认定、赔付金额计算
+- 注意理赔时效、材料审核、反欺诈检查
+
+测试用例应该包含：
+- title: 用例标题
+- description: 用例描述
+- preconditions: 前置条件（如：出险事故、理赔材料）
+- test_steps: 测试步骤（数组格式，每步包含 step, action, expected）
+- expected_result: 预期结果
+- priority: 优先级
+- test_type: 测试类型
+
+请以JSON格式返回测试用例列表。"""
+
 
 def get_or_create_config(db: Session, key: str, default_value: str, description: str = None) -> SystemConfig:
     """获取或创建配置项"""
@@ -272,10 +329,31 @@ def get_prompt_config(
         DEFAULT_TEST_CASE_PROMPT,
         "测试用例生成 Prompt"
     )
+    contract_test_case_prompt_config = get_or_create_config(
+        db,
+        "CONTRACT_TEST_CASE_PROMPT",
+        DEFAULT_CONTRACT_TEST_CASE_PROMPT,
+        "契约业务线测试用例生成 Prompt"
+    )
+    preservation_test_case_prompt_config = get_or_create_config(
+        db,
+        "PRESERVATION_TEST_CASE_PROMPT",
+        DEFAULT_PRESERVATION_TEST_CASE_PROMPT,
+        "保全业务线测试用例生成 Prompt"
+    )
+    claim_test_case_prompt_config = get_or_create_config(
+        db,
+        "CLAIM_TEST_CASE_PROMPT",
+        DEFAULT_CLAIM_TEST_CASE_PROMPT,
+        "理赔业务线测试用例生成 Prompt"
+    )
 
     return {
         "test_point_prompt": test_point_prompt_config.config_value,
-        "test_case_prompt": test_case_prompt_config.config_value
+        "test_case_prompt": test_case_prompt_config.config_value,
+        "contract_test_case_prompt": contract_test_case_prompt_config.config_value,
+        "preservation_test_case_prompt": preservation_test_case_prompt_config.config_value,
+        "claim_test_case_prompt": claim_test_case_prompt_config.config_value
     }
 
 
@@ -303,12 +381,39 @@ def update_prompt_config(
     )
     test_case_prompt_config.config_value = config.test_case_prompt
 
+    contract_test_case_prompt_config = get_or_create_config(
+        db,
+        "CONTRACT_TEST_CASE_PROMPT",
+        DEFAULT_CONTRACT_TEST_CASE_PROMPT,
+        "契约业务线测试用例生成 Prompt"
+    )
+    contract_test_case_prompt_config.config_value = config.contract_test_case_prompt
+
+    preservation_test_case_prompt_config = get_or_create_config(
+        db,
+        "PRESERVATION_TEST_CASE_PROMPT",
+        DEFAULT_PRESERVATION_TEST_CASE_PROMPT,
+        "保全业务线测试用例生成 Prompt"
+    )
+    preservation_test_case_prompt_config.config_value = config.preservation_test_case_prompt
+
+    claim_test_case_prompt_config = get_or_create_config(
+        db,
+        "CLAIM_TEST_CASE_PROMPT",
+        DEFAULT_CLAIM_TEST_CASE_PROMPT,
+        "理赔业务线测试用例生成 Prompt"
+    )
+    claim_test_case_prompt_config.config_value = config.claim_test_case_prompt
+
     db.commit()
 
     return {
         "message": "Prompt 配置更新成功",
         "test_point_prompt": config.test_point_prompt,
-        "test_case_prompt": config.test_case_prompt
+        "test_case_prompt": config.test_case_prompt,
+        "contract_test_case_prompt": config.contract_test_case_prompt,
+        "preservation_test_case_prompt": config.preservation_test_case_prompt,
+        "claim_test_case_prompt": config.claim_test_case_prompt
     }
 
 
