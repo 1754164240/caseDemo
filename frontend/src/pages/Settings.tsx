@@ -10,6 +10,7 @@ export default function Settings() {
   const [loading, setLoading] = useState(false)
   const [milvusForm] = Form.useForm()
   const [modelForm] = Form.useForm()
+  const [embeddingForm] = Form.useForm()
   const [promptForm] = Form.useForm()
   const [initialLoading, setInitialLoading] = useState(true)
 
@@ -38,6 +39,14 @@ export default function Settings() {
         api_key: modelResponse.data.api_key_full,
         api_base: modelResponse.data.api_base,
         model_name: modelResponse.data.model_name,
+      })
+
+      // 加载 Embedding 配置
+      const embeddingResponse = await systemConfigAPI.getEmbeddingConfig()
+      embeddingForm.setFieldsValue({
+        embedding_model: embeddingResponse.data.embedding_model,
+        embedding_api_key: embeddingResponse.data.embedding_api_key_full,
+        embedding_api_base: embeddingResponse.data.embedding_api_base,
       })
 
       // 加载 Prompt 配置
@@ -86,6 +95,23 @@ export default function Settings() {
         model_name: values.model_name,
       })
       message.success('模型配置保存成功（部分配置需要重启后端才能完全生效）')
+    } catch (error: any) {
+      console.error('保存失败:', error)
+      message.error(error.response?.data?.detail || '保存失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const onSaveEmbedding = async (values: any) => {
+    setLoading(true)
+    try {
+      await systemConfigAPI.updateEmbeddingConfig({
+        embedding_model: values.embedding_model,
+        embedding_api_key: values.embedding_api_key,
+        embedding_api_base: values.embedding_api_base,
+      })
+      message.success('Embedding 模型配置保存成功（部分配置需要重启后端才能完全生效）')
     } catch (error: any) {
       console.error('保存失败:', error)
       message.error(error.response?.data?.detail || '保存失败')
@@ -233,6 +259,52 @@ export default function Settings() {
                 extra="例如: gpt-4, deepseek-ai/DeepSeek-V3.1 等"
               >
                 <Input placeholder="gpt-4" />
+              </Form.Item>
+              <Form.Item>
+                <Button type="primary" htmlType="submit" loading={loading}>
+                  保存配置
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
+        </TabPane>
+
+        <TabPane
+          tab={
+            <span>
+              <ApiOutlined />
+              Embedding 配置
+            </span>
+          }
+          key="embedding"
+        >
+          <Card>
+            <Form
+              form={embeddingForm}
+              layout="vertical"
+              onFinish={onSaveEmbedding}
+            >
+              <Form.Item
+                name="embedding_model"
+                label="Embedding 模型名称"
+                rules={[{ required: true, message: '请输入 Embedding 模型名称' }]}
+                extra="例如: text-embedding-ada-002 (OpenAI), BAAI/bge-small-zh-v1.5 (ModelScope)"
+              >
+                <Input placeholder="text-embedding-ada-002" />
+              </Form.Item>
+              <Form.Item
+                name="embedding_api_key"
+                label="Embedding API Key"
+                extra="为空时使用 LLM 的 API Key。如果 Embedding 模型使用不同的服务,请单独配置"
+              >
+                <Input.Password placeholder="为空时使用 LLM 的 API Key" />
+              </Form.Item>
+              <Form.Item
+                name="embedding_api_base"
+                label="Embedding API Base URL"
+                extra="为空时使用 LLM 的 API Base。如果 Embedding 模型使用不同的服务,请单独配置"
+              >
+                <Input placeholder="为空时使用 LLM 的 API Base" />
               </Form.Item>
               <Form.Item>
                 <Button type="primary" htmlType="submit" loading={loading}>

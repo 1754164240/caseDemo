@@ -47,6 +47,13 @@ class ModelConfigUpdate(BaseModel):
     model_name: str
 
 
+class EmbeddingConfigUpdate(BaseModel):
+    """Embedding 模型配置"""
+    embedding_model: str
+    embedding_api_key: str
+    embedding_api_base: str
+
+
 class PromptConfigUpdate(BaseModel):
     test_point_prompt: str
     test_case_prompt: str

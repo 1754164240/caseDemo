@@ -13,6 +13,7 @@ from app.schemas.system_config import (
     SystemConfigUpdate,
     MilvusConfigUpdate,
     ModelConfigUpdate,
+    EmbeddingConfigUpdate,
     PromptConfigUpdate
 )
 
@@ -308,6 +309,68 @@ def update_model_config(
         "message": "模型配置更新成功（部分配置需要重启后端才能完全生效）",
         "api_base": config.api_base,
         "model_name": config.model_name
+    }
+
+
+@router.get("/embedding")
+def get_embedding_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_superuser)
+):
+    """获取 Embedding 模型配置"""
+    embedding_model_config = get_or_create_config(db, "EMBEDDING_MODEL", "text-embedding-ada-002", "Embedding 模型名称")
+    embedding_api_key_config = get_or_create_config(db, "EMBEDDING_API_KEY", "", "Embedding API Key (为空时使用 LLM 的 API Key)")
+    embedding_api_base_config = get_or_create_config(db, "EMBEDDING_API_BASE", "", "Embedding API Base URL (为空时使用 LLM 的 API Base)")
+
+    # 隐藏 API Key 的部分内容
+    api_key = embedding_api_key_config.config_value
+    if api_key and len(api_key) > 8:
+        masked_key = api_key[:4] + "*" * (len(api_key) - 8) + api_key[-4:]
+    else:
+        masked_key = api_key
+
+    return {
+        "embedding_model": embedding_model_config.config_value,
+        "embedding_api_key": masked_key,
+        "embedding_api_key_full": api_key,  # 用于编辑时回显
+        "embedding_api_base": embedding_api_base_config.config_value
+    }
+
+
+@router.put("/embedding")
+def update_embedding_config(
+    config: EmbeddingConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_superuser)
+):
+    """更新 Embedding 模型配置"""
+    # 更新数据库
+    embedding_model_config = get_or_create_config(db, "EMBEDDING_MODEL", "text-embedding-ada-002", "Embedding 模型名称")
+    embedding_model_config.config_value = config.embedding_model
+
+    embedding_api_key_config = get_or_create_config(db, "EMBEDDING_API_KEY", "", "Embedding API Key (为空时使用 LLM 的 API Key)")
+    embedding_api_key_config.config_value = config.embedding_api_key
+
+    embedding_api_base_config = get_or_create_config(db, "EMBEDDING_API_BASE", "", "Embedding API Base URL (为空时使用 LLM 的 API Base)")
+    embedding_api_base_config.config_value = config.embedding_api_base
+
+    db.commit()
+
+    # 更新 .env 文件
+    update_env_file("EMBEDDING_MODEL", config.embedding_model)
+    update_env_file("EMBEDDING_API_KEY", config.embedding_api_key)
+    update_env_file("EMBEDDING_API_BASE", config.embedding_api_base)
+
+    # 更新运行时配置（需要重启才能完全生效）
+    from app.core.config import settings
+    settings.EMBEDDING_MODEL = config.embedding_model
+    settings.EMBEDDING_API_KEY = config.embedding_api_key
+    settings.EMBEDDING_API_BASE = config.embedding_api_base
+
+    return {
+        "message": "Embedding 模型配置更新成功（部分配置需要重启后端才能完全生效）",
+        "embedding_model": config.embedding_model,
+        "embedding_api_base": config.embedding_api_base
     }
 
 

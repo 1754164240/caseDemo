@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     OPENAI_API_BASE: str = "https://api.openai.com/v1"
     MODEL_NAME: str = "gpt-4"
 
+    # Embedding 模型配置(支持单独的 API)
+    EMBEDDING_MODEL: str = "text-embedding-ada-002"
+    EMBEDDING_API_KEY: str = ""  # 为空时使用 OPENAI_API_KEY
+    EMBEDDING_API_BASE: str = ""  # 为空时使用 OPENAI_API_BASE
+
     # JWT
     SECRET_KEY: str = "your-secret-key-change-this-in-production"
     ALGORITHM: str = "HS256"

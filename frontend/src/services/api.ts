@@ -76,6 +76,14 @@ export const systemConfigAPI = {
   updateModelConfig: (data: { api_key: string; api_base: string; model_name: string }) =>
     api.put('/system-config/model', data),
 
+  // Embedding 模型配置
+  getEmbeddingConfig: () => api.get('/system-config/embedding'),
+  updateEmbeddingConfig: (data: {
+    embedding_model: string;
+    embedding_api_key: string;
+    embedding_api_base: string;
+  }) => api.put('/system-config/embedding', data),
+
   // Prompt 配置
   getPromptConfig: () => api.get('/system-config/prompts'),
   updatePromptConfig: (data: {

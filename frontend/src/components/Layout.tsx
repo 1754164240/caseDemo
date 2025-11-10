@@ -8,6 +8,7 @@ import {
   SettingOutlined,
   UserOutlined,
   LogoutOutlined,
+  BookOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '../stores/authStore'
 import { wsService } from '../services/websocket'
@@ -50,6 +51,11 @@ export default function Layout({ children }: LayoutProps) {
       key: '/test-cases',
       icon: <CheckSquareOutlined />,
       label: '用例管理',
+    },
+    {
+      key: '/knowledge-base',
+      icon: <BookOutlined />,
+      label: '知识问答',
     },
     {
       key: '/settings',
