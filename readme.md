@@ -8,6 +8,7 @@
 
 - 📄 **需求文档上传**：支持 DOCX、PDF、TXT、XLS、XLSX 等多种格式
 - 🤖 **AI 智能识别**：使用 LangGraph 和 LangChain 自动识别测试点
+- 🧠 **文档向量化**：硅基流动 BAAI/bge-large-zh-v1.5 自动切分嵌入并写入 Milvus
 - ✨ **测试用例生成**：基于测试点自动生成详细的测试用例
 - 💬 **反馈优化**：支持用户反馈，AI 根据反馈重新生成
 - 🔔 **实时通知**：WebSocket 实时推送生成进度和结果
@@ -120,6 +121,14 @@ DATABASE_URL=postgresql+psycopg://testcase:testcase123@localhost:5432/test_case_
 # Milvus 配置
 MILVUS_HOST=localhost
 MILVUS_PORT=19530
+
+# 硅基流动嵌入配置
+EMBEDDING_API_KEY=your_EMBEDDING_API_KEY_here
+EMBEDDING_API_BASE=https://api.siliconflow.cn/v1
+EMBEDDING_MODEL=BAAI/bge-large-zh-v1.5
+DOCUMENT_CHUNK_SIZE=500
+DOCUMENT_CHUNK_OVERLAP=100
+EMBEDDING_BATCH_SIZE=16
 ```
 
 > **注意**: 如果使用 Python 3.13，请确保数据库 URL 使用 `postgresql+psycopg://` 格式

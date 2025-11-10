@@ -4,10 +4,12 @@ from typing import List
 
 class Settings(BaseSettings):
     # Database (使用 psycopg 驱动)
-    DATABASE_URL: str = "postgresql+psycopg://testcase:testcase123@localhost:5432/test_case_db"
+    DATABASE_URL: str = "postgresql+psycopg://postgres:ccb.life*123@localhost:5432/test_case_db"
 
     # Milvus
     MILVUS_URI: str = "http://localhost:19530"
+    MILVUS_HOST: str = "localhost"
+    MILVUS_PORT: int = 19530
     MILVUS_USER: str = ""
     MILVUS_PASSWORD: str = ""
     MILVUS_TOKEN: str = ""
@@ -20,9 +22,14 @@ class Settings(BaseSettings):
     MODEL_NAME: str = "gpt-4"
 
     # Embedding 模型配置(支持单独的 API)
-    EMBEDDING_MODEL: str = "text-embedding-ada-002"
+    EMBEDDING_MODEL: str = "BAAI/bge-large-zh-v1.5"
     EMBEDDING_API_KEY: str = ""  # 为空时使用 OPENAI_API_KEY
-    EMBEDDING_API_BASE: str = ""  # 为空时使用 OPENAI_API_BASE
+    EMBEDDING_API_BASE: str = "https://api.siliconflow.cn/v1"  # 为空时使用 OPENAI_API_BASE
+
+    # SiliconFlow Embeddings
+    DOCUMENT_CHUNK_SIZE: int = 500
+    DOCUMENT_CHUNK_OVERLAP: int = 100
+    EMBEDDING_BATCH_SIZE: int = 16
 
     # JWT
     SECRET_KEY: str = "your-secret-key-change-this-in-production"

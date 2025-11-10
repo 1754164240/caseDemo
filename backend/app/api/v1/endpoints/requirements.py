@@ -14,6 +14,7 @@ from app.models.requirement import Requirement, FileType, RequirementStatus
 from app.schemas.requirement import Requirement as RequirementSchema, RequirementCreate, RequirementUpdate, RequirementWithStats
 from app.core.config import settings
 from app.services.document_parser import DocumentParser
+from app.services.document_embedding_service import document_embedding_service
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.models.test_point import TestPoint
@@ -57,6 +58,15 @@ async def process_requirement_background(requirement_id: int, db: Session, user_
             raise Exception("Failed to parse document")
 
         print(f"[INFO] 文档解析成功，文本长度: {len(text)}")
+
+        try:
+            vector_count = document_embedding_service.process_and_store(requirement_id, text)
+            if vector_count:
+                print(f"[INFO] 文档向量化完成，写入 {vector_count} 条向量")
+            else:
+                print("[INFO] 文档切分结果为空或未配置硅基流动 API Key，跳过向量入库")
+        except Exception as vector_error:
+            print(f"[ERROR] 文档向量化失败: {vector_error}")
 
         # 检查 OpenAI API Key
         if not settings.OPENAI_API_KEY or settings.OPENAI_API_KEY == "":
