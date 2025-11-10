@@ -7,7 +7,8 @@ from app.db.session import get_db
 from app.api.deps import get_current_active_user
 from app.models.user import User
 from app.models.test_point import TestPoint
-from app.models.requirement import Requirement
+from app.models.test_case import TestCase
+from app.models.requirement import Requirement, RequirementStatus
 from app.schemas.test_point import TestPoint as TestPointSchema, TestPointCreate, TestPointUpdate, TestPointWithCases, TestPointApproval
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
@@ -255,8 +256,15 @@ async def regenerate_test_points(
     if not requirement:
         raise HTTPException(status_code=404, detail="Requirement not found")
 
-    # 删除该需求下的所有旧测试点
-    db.query(TestPoint).filter(TestPoint.requirement_id == requirement_id).delete()
+    # 获取该需求下的所有测试点ID
+    test_point_ids = [tp.id for tp in db.query(TestPoint).filter(TestPoint.requirement_id == requirement_id).all()]
+
+    # 先删除所有相关的测试用例
+    if test_point_ids:
+        db.query(TestCase).filter(TestCase.test_point_id.in_(test_point_ids)).delete(synchronize_session=False)
+
+    # 再删除该需求下的所有旧测试点
+    db.query(TestPoint).filter(TestPoint.requirement_id == requirement_id).delete(synchronize_session=False)
     db.commit()
 
     # 后台重新生成测试点

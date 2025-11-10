@@ -17,8 +17,24 @@ from app.services.document_parser import DocumentParser
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.models.test_point import TestPoint
+from sqlalchemy import func
 
 router = APIRouter()
+
+
+def generate_test_point_code(db: Session) -> str:
+    """生成测试点编号"""
+    # 获取当前最大编号
+    max_code = db.query(func.max(TestPoint.code)).scalar()
+    if max_code:
+        # 提取数字部分并加1
+        try:
+            num = int(max_code.split('-')[1])
+            return f"TP-{num + 1:03d}"
+        except:
+            pass
+    # 如果没有现有编号或解析失败，从 001 开始
+    return "TP-001"
 
 
 async def process_requirement_background(requirement_id: int, db: Session, user_id: int):
@@ -63,19 +79,23 @@ async def process_requirement_background(requirement_id: int, db: Session, user_
         else:
             # 使用 AI 提取测试点
             print(f"[INFO] 调用 AI 服务提取测试点...")
+            ai_service = get_ai_service(db)
             test_points_data = ai_service.extract_test_points(text)
             print(f"[INFO] AI 提取完成，测试点数量: {len(test_points_data)}")
 
         # 保存测试点
         for tp_data in test_points_data:
+            code = generate_test_point_code(db)
             test_point = TestPoint(
                 requirement_id=requirement_id,
+                code=code,
                 title=tp_data.get('title', ''),
                 description=tp_data.get('description', ''),
                 category=tp_data.get('category', ''),
                 priority=tp_data.get('priority', 'medium')
             )
             db.add(test_point)
+            db.flush()  # 确保编号被保存，以便下一个测试点能获取正确的编号
 
         db.commit()
         print(f"[INFO] 测试点保存成功")
