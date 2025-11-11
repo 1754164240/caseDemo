@@ -1,9 +1,10 @@
-from typing import List
+from typing import List, Optional
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.db.session import get_db
+from app.db.session import get_db, SessionLocal
 from app.api.deps import get_current_active_user
 from app.models.user import User
 from app.models.test_case import TestCase
@@ -17,6 +18,17 @@ from app.services.document_parser import DocumentParser
 router = APIRouter()
 
 
+def _run_async_notification(loop: Optional[asyncio.AbstractEventLoop], coro, description: str):
+    """在线程池中运行的任务里安全地发送异步通知"""
+    if not loop:
+        return
+    try:
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        future.result()
+    except Exception as notify_error:
+        print(f"[WARNING] {description}: {notify_error}")
+
+
 def generate_test_case_code(db: Session, test_point: TestPoint) -> str:
     """生成测试用例编号"""
     # 获取该测试点下的测试用例数量
@@ -28,8 +40,13 @@ def generate_test_case_code(db: Session, test_point: TestPoint) -> str:
     return f"{test_point.code}-{count + 1}"
 
 
-async def generate_test_cases_background(test_point_id: int, db: Session, user_id: int):
-    """后台生成测试用例"""
+def generate_test_cases_background(
+    test_point_id: int,
+    user_id: int,
+    loop: Optional[asyncio.AbstractEventLoop] = None
+):
+    """后台生成测试用例（在线程池运行）"""
+    db = SessionLocal()
     try:
         test_point = db.query(TestPoint).filter(TestPoint.id == test_point_id).first()
         if not test_point:
@@ -74,10 +91,19 @@ async def generate_test_cases_background(test_point_id: int, db: Session, user_i
         db.commit()
         
         # 发送通知
-        await manager.notify_test_case_generated(user_id, test_point_id, len(test_cases_data))
+        _run_async_notification(
+            loop,
+            manager.notify_test_case_generated(user_id, test_point_id, len(test_cases_data)),
+            "发送测试用例生成通知失败"
+        )
         
     except Exception as e:
-        print(f"Error generating test cases: {e}")
+        db.rollback()
+        print(f"[ERROR] 生成测试用例失败: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
 
 
 @router.get("/", response_model=List[TestCaseSchema])
@@ -179,7 +205,13 @@ async def generate_test_cases(
         raise HTTPException(status_code=404, detail="Test point not found")
     
     # 后台生成测试用例
-    background_tasks.add_task(generate_test_cases_background, test_point_id, db, current_user.id)
+    loop = asyncio.get_running_loop()
+    background_tasks.add_task(
+        generate_test_cases_background,
+        test_point_id,
+        current_user.id,
+        loop
+    )
     
     return {"message": "Generating test cases..."}
 

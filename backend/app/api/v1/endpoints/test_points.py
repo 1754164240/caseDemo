@@ -1,9 +1,10 @@
-from typing import List
+from typing import List, Optional
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.db.session import get_db
+from app.db.session import get_db, SessionLocal
 from app.api.deps import get_current_active_user
 from app.models.user import User
 from app.models.test_point import TestPoint
@@ -17,6 +18,17 @@ from app.services.document_embedding_service import document_embedding_service
 from app.core.config import settings
 
 router = APIRouter()
+
+
+def _run_async_notification(loop: Optional[asyncio.AbstractEventLoop], coro, description: str):
+    """在线程池任务中安全地调度异步通知"""
+    if not loop:
+        return
+    try:
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        future.result()
+    except Exception as notify_error:
+        print(f"[WARNING] {description}: {notify_error}")
 
 
 def generate_test_point_code(db: Session) -> str:
@@ -34,8 +46,14 @@ def generate_test_point_code(db: Session) -> str:
     return "TP-001"
 
 
-async def regenerate_test_points_background(requirement_id: int, user_feedback: str, db: Session, user_id: int):
-    """后台重新生成测试点"""
+def regenerate_test_points_background(
+    requirement_id: int,
+    user_feedback: str,
+    user_id: int,
+    loop: Optional[asyncio.AbstractEventLoop] = None
+):
+    """后台重新生成测试点（在线程池中运行）"""
+    db = SessionLocal()
     try:
         requirement = db.query(Requirement).filter(Requirement.id == requirement_id).first()
         if not requirement:
@@ -102,7 +120,11 @@ async def regenerate_test_points_background(requirement_id: int, user_feedback: 
         print(f"[INFO] 测试点重新生成完成，需求 ID: {requirement_id}")
 
         # 发送通知
-        await manager.notify_test_point_generated(user_id, requirement_id, len(test_points_data))
+        _run_async_notification(
+            loop,
+            manager.notify_test_point_generated(user_id, requirement_id, len(test_points_data)),
+            "发送测试点生成通知失败"
+        )
 
     except Exception as e:
         print(f"[ERROR] 重新生成测试点失败: {e}")
@@ -117,6 +139,8 @@ async def regenerate_test_points_background(requirement_id: int, user_feedback: 
                 db.commit()
         except Exception as update_error:
             print(f"[ERROR] 更新状态失败: {update_error}")
+    finally:
+        db.close()
 
 
 @router.get("/", response_model=List[TestPointWithCases])
@@ -249,12 +273,13 @@ async def submit_feedback(
     db.commit()
     
     # 后台重新生成测试点
+    loop = asyncio.get_running_loop()
     background_tasks.add_task(
         regenerate_test_points_background,
         test_point.requirement_id,
         feedback,
-        db,
-        current_user.id
+        current_user.id,
+        loop
     )
     
     return {"message": "Feedback submitted, regenerating test points..."}
@@ -290,12 +315,13 @@ async def regenerate_test_points(
     db.commit()
 
     # 后台重新生成测试点
+    loop = asyncio.get_running_loop()
     background_tasks.add_task(
         regenerate_test_points_background,
         requirement_id,
         feedback or "",
-        db,
-        current_user.id
+        current_user.id,
+        loop
     )
 
     return {"message": "Regenerating test points..."}

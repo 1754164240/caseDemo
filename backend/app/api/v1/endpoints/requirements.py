@@ -1,4 +1,5 @@
-from typing import List
+from typing import List, Optional
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -7,7 +8,7 @@ import shutil
 from datetime import datetime
 from urllib.parse import quote
 
-from app.db.session import get_db
+from app.db.session import get_db, SessionLocal
 from app.api.deps import get_current_active_user
 from app.models.user import User
 from app.models.requirement import Requirement, FileType, RequirementStatus
@@ -19,9 +20,20 @@ from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.models.test_point import TestPoint
 from app.services.milvus_service import milvus_service
-from sqlalchemy import func
+from sqlalchemy import func, desc
 
 router = APIRouter()
+
+
+def _run_async_notification(loop: Optional[asyncio.AbstractEventLoop], coro, description: str):
+    """在后台线程中安全地调度异步通知"""
+    if not loop:
+        return
+    try:
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        future.result()
+    except Exception as notify_error:
+        print(f"[WARNING] {description}: {notify_error}")
 
 
 def generate_test_point_code(db: Session) -> str:
@@ -71,14 +83,20 @@ def cleanup_failed_requirement(
             print(f"[ERROR] 删除失败需求记录出错: {cleanup_error}")
 
 
-async def process_requirement_background(requirement_id: int, db: Session, user_id: int):
-    """后台处理需求文档"""
-    requirement = db.query(Requirement).filter(Requirement.id == requirement_id).first()
-    if not requirement:
-        return
-    requirement_file_path = requirement.file_path
-
+def process_requirement_background(
+    requirement_id: int,
+    user_id: int,
+    loop: Optional[asyncio.AbstractEventLoop] = None
+):
+    """后台处理需求文档（在线程池运行，避免阻塞事件循环）"""
+    db = SessionLocal()
+    requirement_file_path = None
     try:
+        requirement = db.query(Requirement).filter(Requirement.id == requirement_id).first()
+        if not requirement:
+            return
+        requirement_file_path = requirement.file_path
+
         # 更新状态为处理中
         requirement.status = RequirementStatus.PROCESSING
         db.commit()
@@ -180,7 +198,11 @@ async def process_requirement_background(requirement_id: int, db: Session, user_
         print(f"[INFO] 需求处理完成 ID: {requirement_id}")
 
         # 发送 WebSocket 通知
-        await manager.notify_test_point_generated(user_id, requirement_id, len(test_points_data))
+        _run_async_notification(
+            loop,
+            manager.notify_test_point_generated(user_id, requirement_id, len(test_points_data)),
+            "发送测试点生成通知失败"
+        )
 
     except Exception as e:
         db.rollback()
@@ -193,6 +215,8 @@ async def process_requirement_background(requirement_id: int, db: Session, user_
         )
         import traceback
         traceback.print_exc()
+    finally:
+        db.close()
 
 
 @router.post("/", response_model=RequirementSchema)
@@ -245,7 +269,13 @@ async def create_requirement(
     db.refresh(requirement)
     
     # 后台处理文档
-    background_tasks.add_task(process_requirement_background, requirement.id, db, current_user.id)
+    loop = asyncio.get_running_loop()
+    background_tasks.add_task(
+        process_requirement_background,
+        requirement.id,
+        current_user.id,
+        loop
+    )
     
     return requirement
 
@@ -258,9 +288,14 @@ def read_requirements(
     current_user: User = Depends(get_current_active_user)
 ):
     """获取需求列表"""
-    requirements = db.query(Requirement).filter(
-        Requirement.user_id == current_user.id
-    ).offset(skip).limit(limit).all()
+    requirements = (
+        db.query(Requirement)
+        .filter(Requirement.user_id == current_user.id)
+        .order_by(Requirement.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     
     result = []
     for req in requirements:

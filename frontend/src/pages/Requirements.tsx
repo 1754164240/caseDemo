@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Table, Button, Upload, Modal, Form, Input, message, Tag, Space, Popconfirm, Descriptions, Drawer } from 'antd'
 import { UploadOutlined, EyeOutlined, DeleteOutlined, ThunderboltOutlined, DownloadOutlined } from '@ant-design/icons'
 import { requirementsAPI, testPointsAPI } from '../services/api'
@@ -13,12 +13,29 @@ export default function Requirements() {
   const [testPoints, setTestPoints] = useState([])
   const [form] = Form.useForm()
   const [fileList, setFileList] = useState<any[]>([])
+  const [processingRequirementId, setProcessingRequirementId] = useState<number | null>(null)
+
+  const hasLoadedRef = useRef(false)
+  const processingRequirementIdRef = useRef<number | null>(null)
 
   useEffect(() => {
+    if (hasLoadedRef.current) return
+    hasLoadedRef.current = true
     loadRequirements()
-    
-    // 监听 WebSocket 更新
-    const handleUpdate = () => loadRequirements()
+  }, [])
+
+  useEffect(() => {
+    processingRequirementIdRef.current = processingRequirementId
+  }, [processingRequirementId])
+
+  useEffect(() => {
+    const handleUpdate = (event: Event) => {
+      const requirementId = (event as CustomEvent<number | undefined>).detail
+      if (requirementId && processingRequirementIdRef.current === requirementId) {
+        setProcessingRequirementId(null)
+      }
+      loadRequirements()
+    }
     window.addEventListener('test-points-updated', handleUpdate)
     return () => window.removeEventListener('test-points-updated', handleUpdate)
   }, [])
@@ -27,7 +44,16 @@ export default function Requirements() {
     setLoading(true)
     try {
       const response = await requirementsAPI.list()
-      setRequirements(response.data)
+      const data = response.data || []
+      setRequirements(data)
+
+      const currentProcessingId = processingRequirementIdRef.current
+      if (currentProcessingId) {
+        const currentRequirement = data.find((req: any) => req.id === currentProcessingId)
+        if (!currentRequirement || currentRequirement.status !== 'processing') {
+          setProcessingRequirementId(null)
+        }
+      }
     } catch (error) {
       message.error('加载需求列表失败')
     } finally {
@@ -49,13 +75,24 @@ export default function Requirements() {
     formData.append('file', fileList[0].originFileObj)
 
     try {
-      await requirementsAPI.create(formData)
-      message.success('需求上传成功，正在处理...')
+      const response = await requirementsAPI.create(formData)
+      const requirementId = response?.data?.id
+      if (requirementId) {
+        setProcessingRequirementId(requirementId)
+        message.loading({
+          content: '需求上传成功，正在处理...',
+          key: `requirement-${requirementId}`,
+          duration: 0,
+        })
+      } else {
+        message.success('需求上传成功，正在处理...')
+      }
       setUploadModalVisible(false)
       form.resetFields()
       setFileList([])
       loadRequirements()
     } catch (error: any) {
+      setProcessingRequirementId(null)
       message.error(error.response?.data?.detail || '上传失败')
     }
   }
@@ -344,7 +381,7 @@ export default function Requirements() {
           setTestPoints([])
         }}
       >
-        {selectedRequirement && (
+      {selectedRequirement && (
           <>
             <Descriptions bordered column={1}>
               <Descriptions.Item label="需求标题">
@@ -407,6 +444,19 @@ export default function Requirements() {
           </>
         )}
       </Drawer>
+
+      {processingRequirementId && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.2)',
+            zIndex: 2000,
+            pointerEvents: 'auto',
+          }}
+        />
+      )}
+
     </div>
   )
 }
