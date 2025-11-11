@@ -1,6 +1,6 @@
 from typing import List, Optional
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import os
@@ -20,7 +20,7 @@ from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.models.test_point import TestPoint
 from app.services.milvus_service import milvus_service
-from sqlalchemy import func, desc
+from sqlalchemy import func, or_
 
 router = APIRouter()
 
@@ -284,14 +284,57 @@ async def create_requirement(
 def read_requirements(
     skip: int = 0,
     limit: int = 100,
+    search: Optional[str] = Query(None, description="Search by title or file name"),
+    file_category: Optional[str] = Query(None, description="Filter by file category: word/excel/pdf (comma separated for multi-select)"),
+    statuses: Optional[str] = Query(None, description="Filter by statuses, comma separated"),
+    start_date: Optional[datetime] = Query(None, description="Filter by created_at start time"),
+    end_date: Optional[datetime] = Query(None, description="Filter by created_at end time"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """获取需求列表"""
+    query = db.query(Requirement).filter(Requirement.user_id == current_user.id)
+
+    if search:
+        search_pattern = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                Requirement.title.ilike(search_pattern),
+                Requirement.file_name.ilike(search_pattern),
+            )
+        )
+
+    if file_category:
+        selected_categories = [c.strip().lower() for c in file_category.split(",") if c.strip()]
+        file_category_mapping = {
+            "word": [FileType.DOCX],
+            "excel": [FileType.XLS, FileType.XLSX],
+            "pdf": [FileType.PDF],
+        }
+        allowed_types = []
+        for category in selected_categories:
+            allowed_types.extend(file_category_mapping.get(category, []))
+        if allowed_types:
+            query = query.filter(Requirement.file_type.in_(allowed_types))
+
+    if statuses:
+        selected_statuses = {
+            status.strip().lower()
+            for status in statuses.split(",")
+            if status.strip()
+        }
+        valid_statuses = [status for status in RequirementStatus if status.value in selected_statuses]
+        if valid_statuses:
+            query = query.filter(Requirement.status.in_(valid_statuses))
+
+    if start_date:
+        query = query.filter(Requirement.created_at >= start_date)
+
+    if end_date:
+        query = query.filter(Requirement.created_at <= end_date)
+
     requirements = (
-        db.query(Requirement)
-        .filter(Requirement.user_id == current_user.id)
-        .order_by(Requirement.created_at.desc())
+        query.order_by(Requirement.created_at.desc())
         .offset(skip)
         .limit(limit)
         .all()

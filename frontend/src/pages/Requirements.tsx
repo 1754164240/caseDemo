@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
-import { Table, Button, Upload, Modal, Form, Input, message, Tag, Space, Popconfirm, Descriptions, Drawer } from 'antd'
+import { useCallback, useEffect, useRef, useState, ChangeEvent } from 'react'
+import { Table, Button, Upload, Modal, Form, Input, message, Tag, Space, Popconfirm, Descriptions, Drawer, Select, DatePicker } from 'antd'
 import { UploadOutlined, EyeOutlined, DeleteOutlined, ThunderboltOutlined, DownloadOutlined } from '@ant-design/icons'
 import { requirementsAPI, testPointsAPI } from '../services/api'
-import dayjs from 'dayjs'
+import dayjs, { Dayjs } from 'dayjs'
+
+const { RangePicker } = DatePicker
 
 export default function Requirements() {
   const [requirements, setRequirements] = useState([])
@@ -14,36 +16,34 @@ export default function Requirements() {
   const [form] = Form.useForm()
   const [fileList, setFileList] = useState<any[]>([])
   const [processingRequirementId, setProcessingRequirementId] = useState<number | null>(null)
+  const [searchInput, setSearchInput] = useState('')
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [fileTypeFilter, setFileTypeFilter] = useState<string[]>([])
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
+  const [createdAtRange, setCreatedAtRange] = useState<[Dayjs, Dayjs] | null>(null)
 
   const hasLoadedRef = useRef(false)
   const processingRequirementIdRef = useRef<number | null>(null)
 
-  useEffect(() => {
-    if (hasLoadedRef.current) return
-    hasLoadedRef.current = true
-    loadRequirements()
-  }, [])
-
-  useEffect(() => {
-    processingRequirementIdRef.current = processingRequirementId
-  }, [processingRequirementId])
-
-  useEffect(() => {
-    const handleUpdate = (event: Event) => {
-      const requirementId = (event as CustomEvent<number | undefined>).detail
-      if (requirementId && processingRequirementIdRef.current === requirementId) {
-        setProcessingRequirementId(null)
-      }
-      loadRequirements()
-    }
-    window.addEventListener('test-points-updated', handleUpdate)
-    return () => window.removeEventListener('test-points-updated', handleUpdate)
-  }, [])
-
-  const loadRequirements = async () => {
+  const loadRequirements = useCallback(async () => {
     setLoading(true)
     try {
-      const response = await requirementsAPI.list()
+      const params: Record<string, any> = {}
+      if (searchKeyword) {
+        params.search = searchKeyword
+      }
+      if (fileTypeFilter.length) {
+        params.file_category = fileTypeFilter.join(',')
+      }
+      if (statusFilter.length) {
+        params.statuses = statusFilter.join(',')
+      }
+      if (createdAtRange) {
+        params.start_date = createdAtRange[0].startOf('day').toISOString()
+        params.end_date = createdAtRange[1].endOf('day').toISOString()
+      }
+
+      const response = await requirementsAPI.list(params)
       const data = response.data || []
       setRequirements(data)
 
@@ -59,7 +59,34 @@ export default function Requirements() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [searchKeyword, fileTypeFilter, statusFilter, createdAtRange])
+
+  useEffect(() => {
+    if (hasLoadedRef.current) return
+    hasLoadedRef.current = true
+    loadRequirements()
+  }, [loadRequirements])
+
+  useEffect(() => {
+    processingRequirementIdRef.current = processingRequirementId
+  }, [processingRequirementId])
+
+  useEffect(() => {
+    if (!hasLoadedRef.current) return
+    loadRequirements()
+  }, [searchKeyword, fileTypeFilter, statusFilter, createdAtRange, loadRequirements])
+
+  useEffect(() => {
+    const handleUpdate = (event: Event) => {
+      const requirementId = (event as CustomEvent<number | undefined>).detail
+      if (requirementId && processingRequirementIdRef.current === requirementId) {
+        setProcessingRequirementId(null)
+      }
+      loadRequirements()
+    }
+    window.addEventListener('test-points-updated', handleUpdate)
+    return () => window.removeEventListener('test-points-updated', handleUpdate)
+  }, [loadRequirements])
 
   const handleUpload = async (values: any) => {
     if (fileList.length === 0) {
@@ -143,6 +170,56 @@ export default function Requirements() {
       message.error({ content: '下载失败', key: 'download' })
     }
   }
+
+  const handleSearch = (value: string) => {
+    setSearchInput(value)
+    setSearchKeyword(value.trim())
+  }
+
+  const handleSearchInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const { value } = e.target
+    setSearchInput(value)
+    if (value === '') {
+      setSearchKeyword('')
+    }
+  }
+
+  const handleFileTypeFilterChange = (value: string[]) => {
+    setFileTypeFilter(value)
+  }
+
+  const handleStatusFilterChange = (value: string[]) => {
+    setStatusFilter(value)
+  }
+
+  const handleDateRangeChange = (values: null | (Dayjs | null)[], _dateStrings?: [string, string]) => {
+    if (values && values[0] && values[1]) {
+      setCreatedAtRange([values[0], values[1]] as [Dayjs, Dayjs])
+    } else {
+      setCreatedAtRange(null)
+    }
+  }
+
+  const handleResetFilters = () => {
+    setSearchInput('')
+    setSearchKeyword('')
+    setFileTypeFilter([])
+    setStatusFilter([])
+    setCreatedAtRange(null)
+  }
+
+  const fileTypeOptions = [
+    { label: 'Word', value: 'word' },
+    { label: 'Excel', value: 'excel' },
+    { label: 'PDF', value: 'pdf' },
+  ]
+
+  const statusOptions = [
+    { label: '已上传', value: 'uploaded' },
+    { label: '处理中', value: 'processing' },
+    { label: '已完成', value: 'completed' },
+    { label: '失败', value: 'failed' },
+  ]
 
   const columns = [
     {
@@ -318,6 +395,42 @@ export default function Requirements() {
         >
           上传需求
         </Button>
+      </div>
+
+      <div style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+        <Select
+          mode="multiple"
+          allowClear
+          placeholder="文件类型"
+          options={fileTypeOptions}
+          value={fileTypeFilter}
+          onChange={handleFileTypeFilterChange}
+          style={{ minWidth: 200 }}
+        />
+        <Select
+          mode="multiple"
+          allowClear
+          placeholder="状态"
+          options={statusOptions}
+          value={statusFilter}
+          onChange={handleStatusFilterChange}
+          style={{ minWidth: 200 }}
+        />
+        <RangePicker
+          value={createdAtRange as [Dayjs, Dayjs] | null}
+          onChange={handleDateRangeChange}
+          allowClear
+          format="YYYY-MM-DD"
+        />
+        <Input.Search
+          placeholder="按标题 / 文件名搜索"
+          allowClear
+          value={searchInput}
+          onChange={handleSearchInputChange}
+          onSearch={handleSearch}
+          style={{ width: 260 }}
+        />
+        <Button onClick={handleResetFilters}>重置筛选</Button>
       </div>
 
       <Table
