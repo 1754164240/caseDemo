@@ -18,6 +18,7 @@ from app.services.document_embedding_service import document_embedding_service
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.models.test_point import TestPoint
+from app.services.milvus_service import milvus_service
 from sqlalchemy import func
 
 router = APIRouter()
@@ -38,11 +39,44 @@ def generate_test_point_code(db: Session) -> str:
     return "TP-001"
 
 
+def cleanup_failed_requirement(
+    requirement_id: int,
+    file_path: str,
+    db: Session,
+    remove_requirement: bool = False,
+):
+    """删除失败需求的文件、向量与数据库记录"""
+    try:
+        milvus_service.delete_by_requirement(requirement_id)
+        print(f"[INFO] 已清理需求 {requirement_id} 的 Milvus 向量")
+    except Exception as milvus_error:
+        print(f"[WARNING] 清理 Milvus 失败（需求 {requirement_id}）: {milvus_error}")
+
+    if remove_requirement and file_path and os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+            print(f"[INFO] 已删除失败需求文件: {file_path}")
+        except Exception as file_error:
+            print(f"[WARNING] 删除文件失败: {file_error}")
+
+    if remove_requirement:
+        try:
+            requirement = db.query(Requirement).filter(Requirement.id == requirement_id).first()
+            if requirement:
+                db.delete(requirement)
+                db.commit()
+                print(f"[INFO] 已删除失败需求记录 ID: {requirement_id}")
+        except Exception as cleanup_error:
+            db.rollback()
+            print(f"[ERROR] 删除失败需求记录出错: {cleanup_error}")
+
+
 async def process_requirement_background(requirement_id: int, db: Session, user_id: int):
     """后台处理需求文档"""
     requirement = db.query(Requirement).filter(Requirement.id == requirement_id).first()
     if not requirement:
         return
+    requirement_file_path = requirement.file_path
 
     try:
         # 更新状态为处理中
@@ -55,18 +89,40 @@ async def process_requirement_background(requirement_id: int, db: Session, user_
         print(f"[INFO] 解析文档: {requirement.file_path}")
         text = DocumentParser.parse(requirement.file_path, requirement.file_type.value)
         if not text:
-            raise Exception("Failed to parse document")
+            raise ValueError("文档解析失败，内容为空")
 
-        print(f"[INFO] 文档解析成功，文本长度: {len(text)}")
+        quality = DocumentParser.evaluate_quality(text)
+        print(
+            "[INFO] 文档解析成功，"
+            f"文本长度 {len(text)}，有效字符 {quality['meaningful_chars']}, "
+            f"非空行占比 {quality['non_empty_ratio']:.2%}"
+        )
 
+        if quality["meaningful_chars"] < settings.MIN_REQUIREMENT_CHARACTERS:
+            raise ValueError(
+                "文档有效字符过少，请确认是否上传了正确的需求内容"
+            )
+        if quality["non_empty_ratio"] < settings.MIN_NON_EMPTY_LINE_RATIO:
+            raise ValueError(
+                "文档空行占比过高，可能存在格式错误，请清理后重新上传"
+            )
+
+        chunks = document_embedding_service.split_text(text)
         try:
-            vector_count = document_embedding_service.process_and_store(requirement_id, text)
+            vector_count = document_embedding_service.process_and_store(requirement_id, chunks)
             if vector_count:
                 print(f"[INFO] 文档向量化完成，写入 {vector_count} 条向量")
             else:
                 print("[INFO] 文档切分结果为空或未配置硅基流动 API Key，跳过向量入库")
         except Exception as vector_error:
-            print(f"[ERROR] 文档向量化失败: {vector_error}")
+            raise RuntimeError(f"文档向量化失败: {vector_error}") from vector_error
+
+        ai_context = document_embedding_service.build_ai_context(chunks)
+        if not ai_context:
+            ai_context = text[: settings.TEST_POINT_MAX_INPUT_CHARS]
+            print(
+                "[WARNING] 无法基于切分构建上下文，直接截取原文作为模型输入，可能覆盖不完整"
+            )
 
         # 检查 OpenAI API Key
         if not settings.OPENAI_API_KEY or settings.OPENAI_API_KEY == "":
@@ -90,7 +146,13 @@ async def process_requirement_background(requirement_id: int, db: Session, user_
             # 使用 AI 提取测试点
             print(f"[INFO] 调用 AI 服务提取测试点...")
             ai_service = get_ai_service(db)
-            test_points_data = ai_service.extract_test_points(text)
+            try:
+                test_points_data = ai_service.extract_test_points(
+                    ai_context,
+                    allow_fallback=False,
+                )
+            except Exception as ai_error:
+                raise RuntimeError(f"AI 提取测试点失败: {ai_error}") from ai_error
             print(f"[INFO] AI 提取完成，测试点数量: {len(test_points_data)}")
 
         # 保存测试点
@@ -121,9 +183,14 @@ async def process_requirement_background(requirement_id: int, db: Session, user_
         await manager.notify_test_point_generated(user_id, requirement_id, len(test_points_data))
 
     except Exception as e:
-        requirement.status = RequirementStatus.FAILED
-        db.commit()
+        db.rollback()
         print(f"[ERROR] 处理需求失败 ID: {requirement_id}, 错误: {str(e)}")
+        cleanup_failed_requirement(
+            requirement_id,
+            requirement_file_path,
+            db,
+            remove_requirement=True,
+        )
         import traceback
         traceback.print_exc()
 
@@ -154,6 +221,13 @@ async def create_requirement(
         shutil.copyfileobj(file.file, buffer)
     
     file_size = os.path.getsize(file_path)
+    if file_size > settings.MAX_UPLOAD_SIZE:
+        os.remove(file_path)
+        max_mb = settings.MAX_UPLOAD_SIZE // (1024 * 1024)
+        raise HTTPException(
+            status_code=400,
+            detail=f"文件大小超过限制（>{max_mb}MB），请压缩或拆分后再上传",
+        )
     
     # 创建需求记录
     requirement = Requirement(

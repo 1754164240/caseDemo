@@ -1,11 +1,14 @@
+import operator
+import time
 from typing import List, Dict, Any, TypedDict, Annotated
+
 from typing_extensions import TypedDict as ExtTypedDict
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END, START
-from app.core.config import settings
-import operator
 from sqlalchemy.orm import Session
+
+from app.core.config import settings
 
 
 class GraphState(ExtTypedDict):
@@ -53,17 +56,25 @@ class AIService:
 
         return default
     
-    def extract_test_points(self, requirement_text: str, user_feedback: str = None) -> List[Dict[str, Any]]:
+    def extract_test_points(
+        self,
+        requirement_text: str,
+        user_feedback: str = None,
+        allow_fallback: bool = True,
+    ) -> List[Dict[str, Any]]:
         """从需求文档中提取测试点"""
 
         try:
-            # 限制文本长度，避免超时
-            max_length = 4000
+            if not requirement_text or not requirement_text.strip():
+                raise ValueError("Requirement text is empty")
+
+            max_length = max(settings.TEST_POINT_MAX_INPUT_CHARS, 1000)
             if len(requirement_text) > max_length:
-                print(f"[WARNING] 需求文本过长 ({len(requirement_text)} 字符)，截取前 {max_length} 字符")
+                print(
+                    f"[WARNING] 需求文本过长 ({len(requirement_text)} 字符)，截取前 {max_length} 字符"
+                )
                 requirement_text = requirement_text[:max_length] + "..."
 
-            # 从数据库获取 Prompt 配置
             default_prompt = """你是一个专业的保险行业测试专家。请从需求文档中识别所有测试点。
 
 测试点应该包括：
@@ -79,78 +90,91 @@ class AIService:
 - priority: 优先级（high/medium/low）
 - business_line: 业务线（contract-契约/preservation-保全/claim-理赔），根据需求内容判断属于哪个业务线
 
-返回格式示例：
-[
-  {{"title": "测试点1", "description": "描述1", "category": "功能", "priority": "high", "business_line": "contract"}},
-  {{"title": "测试点2", "description": "描述2", "category": "边界", "priority": "medium", "business_line": "preservation"}}
-]
-
 {feedback_instruction}"""
 
             system_prompt = self._get_prompt_from_db("TEST_POINT_PROMPT", default_prompt)
 
-            prompt_template = ChatPromptTemplate.from_messages([
-                ("system", system_prompt),
-                ("user", "需求文档内容：\n{requirement_text}")
-            ])
+            prompt_template = ChatPromptTemplate.from_messages(
+                [
+                    ("system", system_prompt),
+                    ("user", "需求文档内容：\n{requirement_text}"),
+                ]
+            )
 
             feedback_instruction = ""
             if user_feedback:
-                feedback_instruction = f"\n用户反馈意见：{user_feedback}\n请根据用户反馈调整测试点。"
+                feedback_instruction = (
+                    f"\n用户反馈意见：{user_feedback}\n请根据用户反馈调整测试点。"
+                )
 
             messages = prompt_template.format_messages(
                 requirement_text=requirement_text,
-                feedback_instruction=feedback_instruction
+                feedback_instruction=feedback_instruction,
             )
 
             print("[INFO] 调用 OpenAI API...")
-            response = self.llm.invoke(messages)
+            retries = max(settings.AI_MAX_RETRIES, 1)
+            delay = max(settings.AI_RETRY_INTERVAL, 1)
+            response = None
+            last_error = None
+            for attempt in range(1, retries + 1):
+                try:
+                    response = self.llm.invoke(messages)
+                    break
+                except Exception as invoke_error:
+                    last_error = invoke_error
+                    print(
+                        f"[WARNING] OpenAI API 调用失败（第 {attempt}/{retries} 次）：{invoke_error}"
+                    )
+                    if attempt < retries:
+                        time.sleep(delay)
+            if response is None:
+                raise last_error or RuntimeError("OpenAI 响应为空")
             print(f"[INFO] OpenAI API 响应成功，内容长度: {len(response.content)}")
 
-            # 解析 AI 响应
             import json
-            # 尝试从响应中提取 JSON
-            content = response.content
 
-            # 查找 JSON 数组
-            start = content.find('[')
-            end = content.rfind(']') + 1
-            if start != -1 and end > start:
-                json_str = content[start:end]
+            content = response.content
+            start_idx = content.find('[')
+            end_idx = content.rfind(']') + 1
+            if start_idx != -1 and end_idx > start_idx:
+                json_str = content[start_idx:end_idx]
                 test_points = json.loads(json_str)
                 print(f"[INFO] 成功解析 {len(test_points)} 个测试点")
                 return test_points
-            else:
-                print("[WARNING] 未找到 JSON 数组，尝试解析整个响应")
-                # 尝试解析整个响应
-                test_points = json.loads(content)
-                if isinstance(test_points, list):
-                    return test_points
+
+            print("[WARNING] 未找到 JSON 数组，尝试解析整个响应")
+            test_points = json.loads(content)
+            if isinstance(test_points, list):
+                return test_points
+
+            raise ValueError("AI 响应格式不正确，未返回测试点列表")
 
         except Exception as e:
             print(f"[ERROR] AI 提取测试点失败: {str(e)}")
             import traceback
-            traceback.print_exc()
 
-        # 如果解析失败，返回示例数据
-        print("[WARNING] 使用示例数据")
-        return [
-            {
-                "title": "功能测试点示例",
-                "description": "这是一个示例测试点，AI 解析失败时显示",
-                "category": "功能",
-                "priority": "high",
-                "business_line": "contract"
-            },
-            {
-                "title": "边界测试点示例",
-                "description": "请检查 OpenAI API Key 配置和网络连接",
-                "category": "边界",
-                "priority": "medium",
-                "business_line": "preservation"
-            }
-        ]
-    
+            traceback.print_exc()
+            if allow_fallback:
+                print("[WARNING] 使用示例数据")
+                return [
+                    {
+                        "title": "功能测试点示例",
+                        "description": "这是一个示例测试点，AI 解析失败时显示",
+                        "category": "功能",
+                        "priority": "high",
+                        "business_line": "contract",
+                    },
+                    {
+                        "title": "边界测试点示例",
+                        "description": "请检查 OpenAI API Key 配置和网络连接",
+                        "category": "边界",
+                        "priority": "medium",
+                        "business_line": "preservation",
+                    },
+                ]
+            raise
+
     def generate_test_cases(self, test_point: Dict[str, Any], requirement_context: str = "") -> List[Dict[str, Any]]:
         """根据测试点生成测试用例"""
 

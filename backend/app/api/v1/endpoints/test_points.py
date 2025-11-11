@@ -13,6 +13,8 @@ from app.schemas.test_point import TestPoint as TestPointSchema, TestPointCreate
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.services.document_parser import DocumentParser
+from app.services.document_embedding_service import document_embedding_service
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -48,13 +50,32 @@ async def regenerate_test_points_background(requirement_id: int, user_feedback: 
         # 解析文档
         text = DocumentParser.parse(requirement.file_path, requirement.file_type.value)
         if not text:
-            raise Exception("Failed to parse document")
+            raise ValueError("文档解析失败，内容为空")
 
-        print(f"[INFO] 文档解析成功，文本长度: {len(text)}")
+        quality = DocumentParser.evaluate_quality(text)
+        print(
+            "[INFO] 文档解析成功，"
+            f"文本长度 {len(text)}，有效字符 {quality['meaningful_chars']}, "
+            f"非空行占比 {quality['non_empty_ratio']:.2%}"
+        )
+        if quality["meaningful_chars"] < settings.MIN_REQUIREMENT_CHARACTERS:
+            raise ValueError("文档有效字符过少，无法重新生成测试点")
+        if quality["non_empty_ratio"] < settings.MIN_NON_EMPTY_LINE_RATIO:
+            raise ValueError("文档空行过多，请检查源文件格式")
+
+        chunks = document_embedding_service.split_text(text)
+        ai_context = document_embedding_service.build_ai_context(chunks)
+        if not ai_context:
+            ai_context = text[: settings.TEST_POINT_MAX_INPUT_CHARS]
+            print("[WARNING] 切分内容为空，使用原始文本截断作为上下文")
 
         # 使用 AI 重新生成测试点（带用户反馈）
         ai_svc = get_ai_service(db)
-        test_points_data = ai_svc.extract_test_points(text, user_feedback)
+        test_points_data = ai_svc.extract_test_points(
+            ai_context,
+            user_feedback,
+            allow_fallback=False,
+        )
 
         print(f"[INFO] 成功生成 {len(test_points_data)} 个测试点")
 

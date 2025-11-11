@@ -182,6 +182,11 @@ class MilvusService:
         if not self.collection:
             return
 
+        try:
+            self.collection.load()
+        except Exception as exc:
+            print(f"[WARNING] Milvus load collection failed before delete: {exc}")
+
         expr = f"requirement_id == {requirement_id}"
         self.collection.delete(expr)
 
