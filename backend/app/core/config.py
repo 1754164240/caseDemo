@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # Embedding 模型配置(支持单独的 API)
     EMBEDDING_MODEL: str = "BAAI/bge-large-zh-v1.5"
-    EMBEDDING_API_KEY: str = ""  # 为空时使用 OPENAI_API_KEY
+    EMBEDDING_API_KEY: str = "sk-tqtmkwhiyecjwvsfhtjsotsblspvfkwbsmjzmkqmyupbgsfv"  # 为空时使用 OPENAI_API_KEY
     EMBEDDING_API_BASE: str = "https://api.siliconflow.cn/v1"  # 为空时使用 OPENAI_API_BASE
 
     # SiliconFlow Embeddings
