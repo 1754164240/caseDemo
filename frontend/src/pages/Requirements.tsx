@@ -149,15 +149,24 @@ export default function Requirements() {
 
   const handleRegenerateTestPoints = async (record: any) => {
     try {
+      setProcessingRequirementId(record.id)
+      message.loading({
+        content: '正在重新生成测试点...',
+        key: `requirement-${record.id}`,
+        duration: 0,
+      })
       await testPointsAPI.regenerate(record.id)
-      message.success('正在重新生成测试点...')
 
       // 更新需求状态为处理中
       setTimeout(() => {
         loadRequirements()
       }, 1000)
     } catch (error: any) {
-      message.error(error.response?.data?.detail || '生成测试点失败')
+      setProcessingRequirementId(null)
+      message.error({
+        content: error.response?.data?.detail || '生成测试点失败',
+        key: `requirement-${record.id}`,
+      })
     }
   }
 
