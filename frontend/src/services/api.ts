@@ -188,5 +188,21 @@ export const testCasesAPI = {
   approve: (id: number, data: { approval_status: string; approval_comment?: string }) =>
     api.post(`/test-cases/${id}/approve`, data),
   resetApproval: (id: number) => api.post(`/test-cases/${id}/reset-approval`),
+  // 导出Excel
+  exportExcel: (params?: { requirement_id?: number; test_point_id?: number }) => {
+    const queryParams = new URLSearchParams()
+    if (params?.requirement_id) queryParams.append('requirement_id', params.requirement_id.toString())
+    if (params?.test_point_id) queryParams.append('test_point_id', params.test_point_id.toString())
+
+    // 从 zustand store 获取 token
+    const token = useAuthStore.getState().token
+
+    return fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/v1/test-cases/export/excel?${queryParams}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    })
+  },
 }
 

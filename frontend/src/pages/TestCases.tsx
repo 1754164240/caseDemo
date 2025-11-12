@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Table, Button, Modal, Form, Input, Select, message, Space, Popconfirm, Tabs, Tag, Drawer, Descriptions, Card, Tooltip } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, ThunderboltOutlined, EyeOutlined, MinusCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, EditOutlined, ThunderboltOutlined, EyeOutlined, MinusCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, DownloadOutlined } from '@ant-design/icons'
 import { testPointsAPI, testCasesAPI, requirementsAPI } from '../services/api'
 import dayjs from 'dayjs'
 
@@ -298,6 +298,62 @@ export default function TestCases() {
     } catch (error: any) {
       console.error('重置失败:', error)
       message.error(error.response?.data?.detail || '重置失败')
+    }
+  }
+
+  // 导出测试用例到Excel
+  const handleExportTestCases = async () => {
+    try {
+      const params: { requirement_id?: number; test_point_id?: number } = {}
+
+      if (selectedRequirementFilter) {
+        params.requirement_id = selectedRequirementFilter
+      }
+      if (selectedTestPointFilter) {
+        params.test_point_id = selectedTestPointFilter
+      }
+
+      message.loading({ content: '正在导出...', key: 'export' })
+
+      const response = await testCasesAPI.exportExcel(params)
+
+      if (!response.ok) {
+        // 尝试解析错误信息
+        let errorMessage = '导出失败'
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.detail || errorMessage
+        } catch (e) {
+          errorMessage = `导出失败 (${response.status} ${response.statusText})`
+        }
+        throw new Error(errorMessage)
+      }
+
+      // 获取文件名
+      const contentDisposition = response.headers.get('Content-Disposition')
+      let filename = '测试用例.xlsx'
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/)
+        if (filenameMatch) {
+          filename = decodeURIComponent(filenameMatch[1])
+        }
+      }
+
+      // 下载文件
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+
+      message.success({ content: '导出成功', key: 'export' })
+    } catch (error: any) {
+      console.error('导出失败:', error)
+      message.error({ content: error.message || '导出失败', key: 'export' })
     }
   }
 
@@ -708,74 +764,84 @@ export default function TestCases() {
 
         <TabPane tab="测试用例" key="testCases">
           <div style={{ marginBottom: 16 }}>
-            <Space size="middle" style={{ width: '100%', flexWrap: 'wrap' }}>
-              <Select
-                showSearch
-                placeholder="筛选需求"
-                style={{ width: 250 }}
-                allowClear
-                filterOption={(input, option) =>
-                  (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
-                }
-                onChange={(value) => {
-                  setSelectedRequirementFilter(value)
-                  // 清除测试点筛选
-                  setSelectedTestPointFilter(undefined)
-                }}
-                value={selectedRequirementFilter}
-              >
-                {requirements.map((req: any) => (
-                  <Select.Option key={req.id} value={req.id}>
-                    {req.title}
-                  </Select.Option>
-                ))}
-              </Select>
-              <Select
-                showSearch
-                placeholder="筛选测试点"
-                style={{ width: 250 }}
-                allowClear
-                filterOption={(input, option) =>
-                  (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
-                }
-                onChange={(value) => {
-                  setSelectedTestPointFilter(value)
-                }}
-                value={selectedTestPointFilter}
-              >
-                {allTestPoints
-                  .filter((tp: any) => !selectedRequirementFilter || tp.requirement_id === selectedRequirementFilter)
-                  .map((tp: any) => (
-                    <Select.Option key={tp.id} value={tp.id}>
-                      {tp.title}
+            <Space size="middle" style={{ width: '100%', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+              <Space size="middle" style={{ flexWrap: 'wrap' }}>
+                <Select
+                  showSearch
+                  placeholder="筛选需求"
+                  style={{ width: 250 }}
+                  allowClear
+                  filterOption={(input, option) =>
+                    (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+                  }
+                  onChange={(value) => {
+                    setSelectedRequirementFilter(value)
+                    // 清除测试点筛选
+                    setSelectedTestPointFilter(undefined)
+                  }}
+                  value={selectedRequirementFilter}
+                >
+                  {requirements.map((req: any) => (
+                    <Select.Option key={req.id} value={req.id}>
+                      {req.title}
                     </Select.Option>
                   ))}
-              </Select>
-              <Input.Search
-                placeholder="搜索测试用例（标题、描述、前置条件、预期结果）"
-                style={{ width: 350 }}
-                allowClear
-                onSearch={(value) => setTestCaseSearchKeyword(value)}
-                onChange={(e) => {
-                  if (!e.target.value) {
-                    setTestCaseSearchKeyword('')
+                </Select>
+                <Select
+                  showSearch
+                  placeholder="筛选测试点"
+                  style={{ width: 250 }}
+                  allowClear
+                  filterOption={(input, option) =>
+                    (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
                   }
-                }}
-              />
-              {(selectedRequirementFilter || selectedTestPointFilter || testCaseSearchKeyword) && (
-                <Button
-                  onClick={() => {
-                    setSelectedRequirementFilter(undefined)
-                    setSelectedTestPointFilter(undefined)
-                    setTestCaseSearchKeyword('')
+                  onChange={(value) => {
+                    setSelectedTestPointFilter(value)
                   }}
+                  value={selectedTestPointFilter}
                 >
-                  清除筛选
-                </Button>
-              )}
-              <span style={{ color: '#999' }}>
-                共 {testCases.length} 条测试用例
-              </span>
+                  {allTestPoints
+                    .filter((tp: any) => !selectedRequirementFilter || tp.requirement_id === selectedRequirementFilter)
+                    .map((tp: any) => (
+                      <Select.Option key={tp.id} value={tp.id}>
+                        {tp.title}
+                      </Select.Option>
+                    ))}
+                </Select>
+                <Input.Search
+                  placeholder="搜索测试用例（标题、描述、前置条件、预期结果）"
+                  style={{ width: 350 }}
+                  allowClear
+                  onSearch={(value) => setTestCaseSearchKeyword(value)}
+                  onChange={(e) => {
+                    if (!e.target.value) {
+                      setTestCaseSearchKeyword('')
+                    }
+                  }}
+                />
+                {(selectedRequirementFilter || selectedTestPointFilter || testCaseSearchKeyword) && (
+                  <Button
+                    onClick={() => {
+                      setSelectedRequirementFilter(undefined)
+                      setSelectedTestPointFilter(undefined)
+                      setTestCaseSearchKeyword('')
+                    }}
+                  >
+                    清除筛选
+                  </Button>
+                )}
+                <span style={{ color: '#999' }}>
+                  共 {testCases.length} 条测试用例
+                </span>
+              </Space>
+              <Button
+                type="primary"
+                icon={<DownloadOutlined />}
+                onClick={handleExportTestCases}
+                disabled={testCases.length === 0}
+              >
+                导出Excel
+              </Button>
             </Space>
           </div>
           <Table

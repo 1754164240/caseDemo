@@ -1,8 +1,13 @@
 from typing import List, Optional
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from io import BytesIO
+from datetime import datetime
+import openpyxl
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 from app.db.session import get_db, SessionLocal
 from app.api.deps import get_current_active_user
@@ -324,4 +329,164 @@ def reset_test_case_approval(
     db.refresh(test_case)
 
     return test_case
+
+
+@router.get("/export/excel")
+def export_test_cases_to_excel(
+    requirement_id: Optional[int] = None,
+    test_point_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """导出测试用例到Excel"""
+    print(f"[INFO] 开始导出测试用例 - requirement_id: {requirement_id}, test_point_id: {test_point_id}")
+
+    # 构建查询
+    query = db.query(TestCase).join(TestPoint).join(Requirement).filter(
+        Requirement.user_id == current_user.id
+    )
+
+    # 按需求筛选
+    if requirement_id:
+        query = query.filter(Requirement.id == requirement_id)
+
+    # 按测试点筛选
+    if test_point_id:
+        query = query.filter(TestCase.test_point_id == test_point_id)
+
+    test_cases = query.order_by(TestCase.code).all()
+
+    if not test_cases:
+        raise HTTPException(status_code=404, detail="No test cases found")
+
+    print(f"[INFO] 找到 {len(test_cases)} 个测试用例")
+
+    # 创建Excel工作簿
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "测试用例"
+
+    # 定义样式
+    header_font = Font(name='微软雅黑', size=11, bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+    header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    cell_font = Font(name='微软雅黑', size=10)
+    cell_alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+
+    # 设置表头
+    headers = [
+        '需求名称', '测试点编号', '测试点名称', '测试用例编号', '测试用例标题',
+        '描述', '前置条件', '测试步骤', '预期结果', '优先级', '测试类型',
+        '审批状态', '审批意见', '创建时间'
+    ]
+
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_num, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
+
+    # 设置列宽
+    column_widths = [20, 15, 25, 15, 30, 40, 30, 50, 30, 10, 12, 12, 30, 20]
+    for col_num, width in enumerate(column_widths, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_num)].width = width
+
+    # 填充数据
+    for row_num, test_case in enumerate(test_cases, 2):
+        test_point = test_case.test_point
+        requirement = test_point.requirement
+
+        # 格式化测试步骤
+        test_steps_text = ""
+        if test_case.test_steps:
+            for i, step in enumerate(test_case.test_steps, 1):
+                action = step.get('action', '')
+                expected = step.get('expected', '')
+                test_steps_text += f"{i}. {action}"
+                if expected:
+                    test_steps_text += f"\n   预期: {expected}"
+                test_steps_text += "\n"
+
+        # 审批状态映射
+        approval_status_map = {
+            'pending': '待审批',
+            'approved': '已通过',
+            'rejected': '已拒绝'
+        }
+
+        # 优先级映射
+        priority_map = {
+            'high': '高',
+            'medium': '中',
+            'low': '低'
+        }
+
+        row_data = [
+            requirement.title,
+            test_point.code,
+            test_point.title,
+            test_case.code,
+            test_case.title,
+            test_case.description or '',
+            test_case.preconditions or '',
+            test_steps_text.strip(),
+            test_case.expected_result or '',
+            priority_map.get(test_case.priority, test_case.priority),
+            test_case.test_type or '',
+            approval_status_map.get(test_case.approval_status, test_case.approval_status),
+            test_case.approval_comment or '',
+            test_case.created_at.strftime('%Y-%m-%d %H:%M:%S') if test_case.created_at else ''
+        ]
+
+        for col_num, value in enumerate(row_data, 1):
+            cell = ws.cell(row=row_num, column=col_num, value=value)
+            cell.font = cell_font
+            cell.alignment = cell_alignment
+            cell.border = thin_border
+
+    # 设置行高
+    ws.row_dimensions[1].height = 30
+    for row_num in range(2, len(test_cases) + 2):
+        ws.row_dimensions[row_num].height = 60
+
+    # 保存到内存
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    # 生成文件名
+    from urllib.parse import quote
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if requirement_id:
+        requirement = db.query(Requirement).filter(Requirement.id == requirement_id).first()
+        filename = f"测试用例_{requirement.title}_{timestamp}.xlsx"
+    elif test_point_id:
+        test_point = db.query(TestPoint).filter(TestPoint.id == test_point_id).first()
+        filename = f"测试用例_{test_point.title}_{timestamp}.xlsx"
+    else:
+        filename = f"测试用例_{timestamp}.xlsx"
+
+    # URL编码文件名
+    encoded_filename = quote(filename)
+
+    print(f"[INFO] Excel 导出成功: {filename}")
+
+    # 返回文件流
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
+        }
+    )
 
