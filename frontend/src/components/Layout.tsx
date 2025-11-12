@@ -82,8 +82,21 @@ export default function Layout({ children }: LayoutProps) {
   ]
 
   return (
-    <AntLayout style={{ minHeight: '100vh' }}>
-      <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed}>
+    <AntLayout style={{ height: '100vh', overflow: 'hidden' }}>
+      {/* 左侧菜单 - 固定不滚动 */}
+      <Sider
+        collapsible
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
+        style={{
+          overflow: 'auto',
+          height: '100vh',
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          bottom: 0,
+        }}
+      >
         <div
           style={{
             height: 64,
@@ -105,8 +118,21 @@ export default function Layout({ children }: LayoutProps) {
           onClick={({ key }) => navigate(key)}
         />
       </Sider>
-      <AntLayout>
-        <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+
+      {/* 右侧内容区域 - 添加左边距以避免被固定的 Sider 遮挡 */}
+      <AntLayout style={{ marginLeft: collapsed ? 80 : 200, height: '100vh', display: 'flex', flexDirection: 'column' }}>
+        {/* 顶部 Header - 固定 */}
+        <Header style={{
+          background: '#fff',
+          padding: '0 24px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          position: 'sticky',
+          top: 0,
+          zIndex: 1,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+        }}>
           <div style={{ fontSize: 18, fontWeight: 500 }}>
             保险行业智能测试用例平台
           </div>
@@ -117,7 +143,15 @@ export default function Layout({ children }: LayoutProps) {
             </div>
           </Dropdown>
         </Header>
-        <Content style={{ margin: '24px 16px', padding: 24, background: '#fff', minHeight: 280 }}>
+
+        {/* 内容区域 - 可滚动 */}
+        <Content style={{
+          margin: '24px 16px',
+          padding: 24,
+          background: '#fff',
+          overflow: 'auto',
+          flex: 1
+        }}>
           {children}
         </Content>
       </AntLayout>
