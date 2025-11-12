@@ -13,7 +13,7 @@ class WebSocketService {
     this.userId = userId
     this.shouldReconnect = true
     const wsUrl = `ws://localhost:8000/api/v1/ws/notifications?token=${userId}`
-    
+
     this.ws = new WebSocket(wsUrl)
 
     this.ws.onopen = () => {
@@ -46,33 +46,36 @@ class WebSocketService {
       case 'test_points_generated': {
         const messageKey = data.requirement_id ? `requirement-${data.requirement_id}` : undefined
         if (messageKey) {
-        message.success({ content: data.message, key: messageKey, duration: 3 })
-      } else {
-        message.success(data.message)
+          message.success({ content: data.message, key: messageKey, duration: 3 })
+        } else {
+          message.success(data.message)
+        }
+        window.dispatchEvent(
+          new CustomEvent('test-points-updated', {
+            detail: data.requirement_id,
+          })
+        )
+        window.dispatchEvent(
+          new CustomEvent('test-points-ready', {
+            detail: data.requirement_id,
+          })
+        )
+        break
       }
-      // 触发数据刷新
-      window.dispatchEvent(
-        new CustomEvent('test-points-updated', {
-          detail: data.requirement_id,
-        })
-      )
-      break
-    }
-    case 'test_cases_generated': {
+      case 'test_cases_generated': {
         const messageKey = data.test_point_id ? `test-point-${data.test_point_id}` : undefined
         if (messageKey) {
-        message.success({ content: data.message, key: messageKey, duration: 3 })
-      } else {
-        message.success(data.message)
+          message.success({ content: data.message, key: messageKey, duration: 3 })
+        } else {
+          message.success(data.message)
+        }
+        window.dispatchEvent(
+          new CustomEvent('test-cases-updated', {
+            detail: data.test_point_id,
+          })
+        )
+        break
       }
-      // 触发数据刷新
-      window.dispatchEvent(
-        new CustomEvent('test-cases-updated', {
-          detail: data.test_point_id,
-        })
-      )
-      break
-    }
       case 'progress':
         message.info(data.message)
         break
@@ -118,4 +121,3 @@ class WebSocketService {
 }
 
 export const wsService = new WebSocketService()
-

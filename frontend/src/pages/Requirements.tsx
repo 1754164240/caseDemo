@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, ChangeEvent } from 'react'
 import { Table, Button, Upload, Modal, Form, Input, message, Tag, Space, Popconfirm, Descriptions, Drawer, Select, DatePicker } from 'antd'
-import { UploadOutlined, EyeOutlined, DeleteOutlined, ThunderboltOutlined, DownloadOutlined } from '@ant-design/icons'
+import { UploadOutlined, EyeOutlined, DeleteOutlined, ThunderboltOutlined, DownloadOutlined, ToolOutlined } from '@ant-design/icons'
 import { requirementsAPI, testPointsAPI } from '../services/api'
 import dayjs, { Dayjs } from 'dayjs'
+import TestPointsModal from '../components/TestPointsModal'
 
 const { RangePicker } = DatePicker
 
@@ -21,6 +22,7 @@ export default function Requirements() {
   const [fileTypeFilter, setFileTypeFilter] = useState<string[]>([])
   const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [createdAtRange, setCreatedAtRange] = useState<[Dayjs, Dayjs] | null>(null)
+  const [testPointsModalRequirement, setTestPointsModalRequirement] = useState<any | null>(null)
 
   const hasLoadedRef = useRef(false)
   const processingRequirementIdRef = useRef<number | null>(null)
@@ -87,6 +89,24 @@ export default function Requirements() {
     window.addEventListener('test-points-updated', handleUpdate)
     return () => window.removeEventListener('test-points-updated', handleUpdate)
   }, [loadRequirements])
+
+  useEffect(() => {
+    const handleReady = (event: Event) => {
+      const requirementId = (event as CustomEvent<number | undefined>).detail
+      if (!requirementId) return
+      const matched = requirements.find((req: any) => req.id === requirementId)
+      if (matched) {
+        setTestPointsModalRequirement(matched)
+      } else {
+        requirementsAPI
+          .get(requirementId)
+          .then((res) => setTestPointsModalRequirement(res.data))
+          .catch(() => {})
+      }
+    }
+    window.addEventListener('test-points-ready', handleReady)
+    return () => window.removeEventListener('test-points-ready', handleReady)
+  }, [requirements])
 
   const handleUpload = async (values: any) => {
     if (fileList.length === 0) {
@@ -302,6 +322,14 @@ export default function Requirements() {
             onClick={() => handleViewDetail(record)}
           >
             查看
+          </Button>
+          <Button
+            type="link"
+            icon={<ToolOutlined />}
+            size="small"
+            onClick={() => setTestPointsModalRequirement(record)}
+          >
+            测试点
           </Button>
           <Popconfirm
             title="确定重新生成测试点吗？这将删除现有的测试点。"
@@ -579,6 +607,13 @@ export default function Requirements() {
         />
       )}
 
+      <TestPointsModal
+        open={!!testPointsModalRequirement}
+        requirement={testPointsModalRequirement}
+        onClose={() => setTestPointsModalRequirement(null)}
+        onProcessingStart={(requirementId: number) => setProcessingRequirementId(requirementId)}
+        onProcessingEnd={() => setProcessingRequirementId(null)}
+      />
     </div>
   )
 }

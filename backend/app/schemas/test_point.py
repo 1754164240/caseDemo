@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional, List
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict
 from datetime import datetime
 
 
@@ -31,6 +31,32 @@ class TestPointApproval(BaseModel):
     approval_comment: Optional[str] = None
 
 
+class TestPointOptimizeRequest(BaseModel):
+    requirement_id: int
+    selected_ids: List[int] = Field(default_factory=list)
+    mode: str = "single"  # single / batch
+    per_point_prompts: Dict[int, str] = Field(default_factory=dict)
+    batch_prompt: Optional[str] = None
+    business_info: Optional[str] = None
+    version_note: Optional[str] = None
+
+
+class TestPointBulkUpdateItem(BaseModel):
+    id: int
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    priority: Optional[str] = None
+    business_line: Optional[str] = None
+    user_feedback: Optional[str] = None
+    approval_status: Optional[str] = None
+
+
+class TestPointBulkUpdateRequest(BaseModel):
+    requirement_id: int
+    updates: List[TestPointBulkUpdateItem]
+
+
 class TestPointInDB(TestPointBase):
     id: int
     requirement_id: int
@@ -57,4 +83,18 @@ class TestPoint(TestPointInDB):
 
 class TestPointWithCases(TestPoint):
     test_cases_count: int = 0
+
+
+class TestPointHistoryEntry(BaseModel):
+    id: int
+    version: str
+    title: Optional[str] = None
+    description: Optional[str] = None
+    prompt_summary: Optional[str] = None
+    status: str
+    operator_id: Optional[int] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 

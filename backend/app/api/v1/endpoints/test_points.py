@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -10,7 +10,17 @@ from app.models.user import User
 from app.models.test_point import TestPoint
 from app.models.test_case import TestCase
 from app.models.requirement import Requirement, RequirementStatus
-from app.schemas.test_point import TestPoint as TestPointSchema, TestPointCreate, TestPointUpdate, TestPointWithCases, TestPointApproval
+from app.models.test_point_history import TestPointHistory
+from app.schemas.test_point import (
+    TestPoint as TestPointSchema,
+    TestPointCreate,
+    TestPointUpdate,
+    TestPointWithCases,
+    TestPointApproval,
+    TestPointOptimizeRequest,
+    TestPointHistoryEntry,
+    TestPointBulkUpdateRequest,
+)
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.services.document_parser import DocumentParser
@@ -44,6 +54,103 @@ def generate_test_point_code(db: Session) -> str:
             pass
     # 如果没有现有编号或解析失败，从 001 开始
     return "TP-001"
+
+
+def _record_history_entry(
+    db: Session,
+    test_point: TestPoint,
+    prompt_summary: str,
+    operator_id: Optional[int],
+    status: str = "pending",
+) -> None:
+    version_count = (
+        db.query(func.count(TestPointHistory.id))
+        .filter(TestPointHistory.test_point_id == test_point.id)
+        .scalar()
+        or 0
+    )
+    version_label = f"v{version_count + 1:03d}"
+    history = TestPointHistory(
+        test_point_id=test_point.id,
+        requirement_id=test_point.requirement_id,
+        version=version_label,
+        title=test_point.title,
+        description=test_point.description,
+        category=test_point.category,
+        priority=test_point.priority,
+        business_line=test_point.business_line,
+        prompt_summary=prompt_summary,
+        status=status,
+        operator_id=operator_id,
+    )
+    db.add(history)
+
+
+def _build_prompt_summary(
+    batch_prompt: Optional[str],
+    per_prompt: Optional[str],
+    business_info: Optional[str],
+    version_note: Optional[str],
+) -> str:
+    sections: List[str] = []
+    if per_prompt:
+        sections.append(f"单点提示：{per_prompt}")
+    if batch_prompt:
+        sections.append(f"整体提示：{batch_prompt}")
+    if business_info:
+        sections.append(f"业务信息：{business_info}")
+    if version_note:
+        sections.append(f"版本备注：{version_note}")
+    return "\n".join(sections).strip()
+
+
+def _assemble_single_prompt_text(
+    requirement_text: str,
+    test_point: TestPoint,
+    per_prompt: Optional[str],
+    payload: TestPointOptimizeRequest,
+) -> str:
+    context = requirement_text[: settings.TEST_POINT_MAX_INPUT_CHARS]
+    blocks = [
+        context,
+        "当前测试点：",
+        f"标题：{test_point.title}",
+        f"描述：{test_point.description or ''}",
+        f"分类：{test_point.category or ''}",
+        f"业务线：{test_point.business_line or ''}",
+        f"优先级：{test_point.priority or ''}",
+    ]
+    if payload.business_info:
+        blocks.append(f"业务背景：{payload.business_info}")
+    if payload.batch_prompt:
+        blocks.append(f"整体提示词：{payload.batch_prompt}")
+    if per_prompt:
+        blocks.append(f"单点提示词：{per_prompt}")
+    blocks.append("请输出优化后的测试点（JSON 列表）。")
+    return "\n".join(blocks)
+
+
+def _assemble_batch_prompt_text(
+    requirement_text: str,
+    points: List[TestPoint],
+    payload: TestPointOptimizeRequest,
+) -> str:
+    context = requirement_text[: settings.TEST_POINT_MAX_INPUT_CHARS]
+    summary = "\n".join(
+        f"- [{tp.code}] {tp.title}：{(tp.description or '')[:200]}"
+        for tp in points
+    )
+    blocks = [
+        context,
+        "待整体优化的测试点：",
+        summary,
+    ]
+    if payload.business_info:
+        blocks.append(f"业务背景：{payload.business_info}")
+    if payload.batch_prompt:
+        blocks.append(f"整体提示词：{payload.batch_prompt}")
+    blocks.append("请输出与原数量一致的优化测试点列表（JSON）。")
+    return "\n".join(blocks)
 
 
 def regenerate_test_points_background(
@@ -142,6 +249,147 @@ def regenerate_test_points_background(
     finally:
         db.close()
 
+
+def _apply_candidate_to_point(
+    db: Session,
+    test_point: TestPoint,
+    candidate: Dict[str, str],
+    payload: TestPointOptimizeRequest,
+    per_prompt: Optional[str],
+    operator_id: Optional[int],
+) -> None:
+    test_point.title = candidate.get("title") or test_point.title
+    test_point.description = (
+        candidate.get("description")
+        or candidate.get("content")
+        or test_point.description
+    )
+    test_point.category = candidate.get("category") or test_point.category
+    test_point.priority = candidate.get("priority") or test_point.priority
+    test_point.business_line = candidate.get("business_line") or test_point.business_line
+    test_point.approval_status = "pending"
+    test_point.is_approved = False
+
+    prompt_summary = _build_prompt_summary(
+        payload.batch_prompt,
+        per_prompt,
+        payload.business_info,
+        payload.version_note,
+    )
+    test_point.user_feedback = prompt_summary
+    db.flush()
+    _record_history_entry(db, test_point, prompt_summary, operator_id, status="pending")
+
+
+def optimize_test_points_background(
+    payload: TestPointOptimizeRequest,
+    user_id: int,
+    loop: Optional[asyncio.AbstractEventLoop] = None,
+) -> None:
+    db = SessionLocal()
+    try:
+        requirement = (
+            db.query(Requirement)
+            .filter(Requirement.id == payload.requirement_id)
+            .first()
+        )
+        if not requirement:
+            return
+
+        points = (
+            db.query(TestPoint)
+            .filter(
+                TestPoint.requirement_id == requirement.id,
+                TestPoint.id.in_(payload.selected_ids),
+            )
+            .order_by(TestPoint.id)
+            .all()
+        )
+        if not points:
+            return
+
+        requirement.status = RequirementStatus.PROCESSING
+        db.commit()
+
+        try:
+            requirement_text = DocumentParser.parse(
+                requirement.file_path, requirement.file_type.value
+            )
+        except Exception as parse_error:
+            print(f"[WARNING] 解析需求文档失败（优化测试点）：{parse_error}")
+            requirement_text = ""
+        if not requirement_text:
+            requirement_text = "\n".join((tp.description or "") for tp in points)
+
+        ai_svc = get_ai_service(db)
+        updated_ids: List[int] = []
+
+        if payload.mode == "batch":
+            prompt_text = _assemble_batch_prompt_text(requirement_text, points, payload)
+            try:
+                batch_candidates = ai_svc.extract_test_points(
+                    prompt_text,
+                    user_feedback=payload.batch_prompt or payload.business_info or "",
+                    allow_fallback=True,
+                )
+            except Exception as ai_error:
+                print(f"[ERROR] 批量优化失败: {ai_error}")
+                batch_candidates = []
+            for tp, candidate in zip(points, batch_candidates):
+                if not candidate:
+                    continue
+                per_prompt = payload.per_point_prompts.get(tp.id)
+                _apply_candidate_to_point(db, tp, candidate, payload, per_prompt, user_id)
+                updated_ids.append(tp.id)
+        else:
+            for tp in points:
+                per_prompt = payload.per_point_prompts.get(tp.id)
+                prompt_text = _assemble_single_prompt_text(
+                    requirement_text, tp, per_prompt, payload
+                )
+                try:
+                    results = ai_svc.extract_test_points(
+                        prompt_text,
+                        user_feedback=per_prompt or payload.batch_prompt or "",
+                        allow_fallback=True,
+                    )
+                except Exception as ai_error:
+                    print(f"[ERROR] 单点优化失败: {ai_error}")
+                    continue
+                if not results:
+                    continue
+                candidate = results[0]
+                _apply_candidate_to_point(db, tp, candidate, payload, per_prompt, user_id)
+                updated_ids.append(tp.id)
+
+        requirement.status = RequirementStatus.COMPLETED
+        db.commit()
+
+        if updated_ids:
+            _run_async_notification(
+                loop,
+                manager.notify_progress(
+                    user_id,
+                    "test_points_optimize",
+                    100,
+                    f"测试点优化完成，共更新 {len(updated_ids)} 条",
+                ),
+                "发送优化进度失败",
+            )
+            _run_async_notification(
+                loop,
+                manager.notify_test_point_generated(
+                    user_id, requirement.id, len(updated_ids)
+                ),
+                "发送测试点优化通知失败",
+            )
+    except Exception as opt_error:
+        print(f"[ERROR] 优化测试点失败: {opt_error}")
+        import traceback
+
+        traceback.print_exc()
+    finally:
+        db.close()
 
 @router.get("/", response_model=List[TestPointWithCases])
 def read_test_points(
@@ -325,6 +573,136 @@ async def regenerate_test_points(
     )
 
     return {"message": "Regenerating test points..."}
+
+
+@router.post("/optimize")
+async def optimize_test_points(
+    payload: TestPointOptimizeRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """使用 LangGraph + LangChain 优化测试点"""
+    requirement = (
+        db.query(Requirement)
+        .filter(
+            Requirement.id == payload.requirement_id,
+            Requirement.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    if not payload.selected_ids:
+        raise HTTPException(status_code=400, detail="请选择测试点")
+
+    valid_ids = {
+        tp.id
+        for tp in db.query(TestPoint.id)
+        .filter(
+            TestPoint.requirement_id == requirement.id,
+            TestPoint.id.in_(payload.selected_ids),
+        )
+        .all()
+    }
+    missing = [tp_id for tp_id in payload.selected_ids if tp_id not in valid_ids]
+    if missing:
+        raise HTTPException(status_code=400, detail="部分测试点不存在或无权访问")
+
+    loop = asyncio.get_running_loop()
+    background_tasks.add_task(
+        optimize_test_points_background,
+        payload,
+        current_user.id,
+        loop,
+    )
+    return {"message": "测试点优化任务已开始"}
+
+
+@router.post("/bulk-update")
+def bulk_update_test_points(
+    payload: TestPointBulkUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """批量保存测试点"""
+    if not payload.updates:
+        return {"updated": 0}
+
+    requirement = (
+        db.query(Requirement)
+        .filter(
+            Requirement.id == payload.requirement_id,
+            Requirement.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    mapping = {
+        tp.id: tp
+        for tp in db.query(TestPoint)
+        .filter(
+            TestPoint.requirement_id == requirement.id,
+            TestPoint.id.in_([item.id for item in payload.updates]),
+        )
+        .all()
+    }
+
+    updated = 0
+    for item in payload.updates:
+        tp = mapping.get(item.id)
+        if not tp:
+            continue
+        if item.title is not None:
+            tp.title = item.title
+        if item.description is not None:
+            tp.description = item.description
+        if item.category is not None:
+            tp.category = item.category
+        if item.priority is not None:
+            tp.priority = item.priority
+        if item.business_line is not None:
+            tp.business_line = item.business_line
+        if item.user_feedback is not None:
+            tp.user_feedback = item.user_feedback
+        if item.approval_status is not None:
+            tp.approval_status = item.approval_status
+            tp.is_approved = (item.approval_status == "approved")
+        updated += 1
+
+    db.commit()
+    return {"updated": updated}
+
+
+@router.get("/{test_point_id}/history", response_model=List[TestPointHistoryEntry])
+def get_test_point_history(
+    test_point_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """获取测试点历史"""
+    test_point = (
+        db.query(TestPoint)
+        .join(Requirement)
+        .filter(
+            TestPoint.id == test_point_id,
+            Requirement.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not test_point:
+        raise HTTPException(status_code=404, detail="Test point not found")
+
+    histories = (
+        db.query(TestPointHistory)
+        .filter(TestPointHistory.test_point_id == test_point_id)
+        .order_by(TestPointHistory.created_at.desc())
+        .all()
+    )
+    return histories
 
 
 @router.delete("/{test_point_id}")
