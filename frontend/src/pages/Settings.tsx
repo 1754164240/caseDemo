@@ -1,7 +1,8 @@
 import { Card, Form, Input, Button, message, InputNumber, Spin, Tabs } from 'antd'
 import { useState, useEffect } from 'react'
 import { systemConfigAPI } from '../services/api'
-import { DatabaseOutlined, ApiOutlined, FileTextOutlined, UserOutlined } from '@ant-design/icons'
+import { DatabaseOutlined, ApiOutlined, FileTextOutlined, UserOutlined, AppstoreOutlined } from '@ant-design/icons'
+import ModelConfigs from './ModelConfigs'
 
 const { TextArea } = Input
 const { TabPane } = Tabs
@@ -9,7 +10,6 @@ const { TabPane } = Tabs
 export default function Settings() {
   const [loading, setLoading] = useState(false)
   const [milvusForm] = Form.useForm()
-  const [modelForm] = Form.useForm()
   const [embeddingForm] = Form.useForm()
   const [promptForm] = Form.useForm()
   const [initialLoading, setInitialLoading] = useState(true)
@@ -31,14 +31,6 @@ export default function Settings() {
         token: milvusResponse.data.token_full,
         db_name: milvusResponse.data.db_name,
         collection_name: milvusResponse.data.collection_name,
-      })
-
-      // 加载模型配置
-      const modelResponse = await systemConfigAPI.getModelConfig()
-      modelForm.setFieldsValue({
-        api_key: modelResponse.data.api_key_full,
-        api_base: modelResponse.data.api_base,
-        model_name: modelResponse.data.model_name,
       })
 
       // 加载 Embedding 配置
@@ -78,23 +70,6 @@ export default function Settings() {
         collection_name: values.collection_name,
       })
       message.success('Milvus 配置保存成功（建议重启后端以完全生效）')
-    } catch (error: any) {
-      console.error('保存失败:', error)
-      message.error(error.response?.data?.detail || '保存失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const onSaveModel = async (values: any) => {
-    setLoading(true)
-    try {
-      await systemConfigAPI.updateModelConfig({
-        api_key: values.api_key,
-        api_base: values.api_base,
-        model_name: values.model_name,
-      })
-      message.success('模型配置保存成功（部分配置需要重启后端才能完全生效）')
     } catch (error: any) {
       console.error('保存失败:', error)
       message.error(error.response?.data?.detail || '保存失败')
@@ -228,45 +203,9 @@ export default function Settings() {
               模型配置
             </span>
           }
-          key="model"
+          key="model-configs"
         >
-          <Card>
-            <Form
-              form={modelForm}
-              layout="vertical"
-              onFinish={onSaveModel}
-            >
-              <Form.Item
-                name="api_key"
-                label="API Key"
-                rules={[{ required: true, message: '请输入 API Key' }]}
-                extra="支持 OpenAI、ModelScope 等兼容 OpenAI API 的服务"
-              >
-                <Input.Password placeholder="请输入 API Key" />
-              </Form.Item>
-              <Form.Item
-                name="api_base"
-                label="API Base URL"
-                rules={[{ required: true, message: '请输入 API Base URL' }]}
-                extra="例如: https://api.openai.com/v1 或 https://api-inference.modelscope.cn/v1/chat/completions"
-              >
-                <Input placeholder="https://api.openai.com/v1" />
-              </Form.Item>
-              <Form.Item
-                name="model_name"
-                label="模型名称"
-                rules={[{ required: true, message: '请输入模型名称' }]}
-                extra="例如: gpt-4, deepseek-ai/DeepSeek-V3.1 等"
-              >
-                <Input placeholder="gpt-4" />
-              </Form.Item>
-              <Form.Item>
-                <Button type="primary" htmlType="submit" loading={loading}>
-                  保存配置
-                </Button>
-              </Form.Item>
-            </Form>
-          </Card>
+          <ModelConfigs embedded={true} />
         </TabPane>
 
         <TabPane
@@ -418,6 +357,18 @@ export default function Settings() {
           </Card>
         </TabPane>
       </Tabs>
+
+      {/* 版本号 */}
+      <div style={{
+        marginTop: 24,
+        textAlign: 'center',
+        color: '#999',
+        fontSize: 12,
+        padding: '12px 0',
+        borderTop: '1px solid #f0f0f0'
+      }}>
+        智能测试用例平台 v0.5.0
+      </div>
     </div>
   )
 }

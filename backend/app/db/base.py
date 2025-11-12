@@ -12,5 +12,6 @@ def import_models():
     from app.models.test_case import TestCase
     from app.models.system_config import SystemConfig
     from app.models.knowledge_base import KnowledgeDocument, QARecord
-    return User, Requirement, TestPoint, TestCase, SystemConfig, KnowledgeDocument, QARecord
+    from app.models.model_config import ModelConfig
+    return User, Requirement, TestPoint, TestCase, SystemConfig, KnowledgeDocument, QARecord, ModelConfig
 

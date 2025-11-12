@@ -102,6 +102,55 @@ export const systemConfigAPI = {
   deleteConfig: (id: number) => api.delete(`/system-config/${id}`),
 }
 
+// 模型配置 API (新的多模型配置)
+export const modelConfigAPI = {
+  // 获取所有模型配置列表
+  list: (includeInactive?: boolean) =>
+    api.get('/model-configs/', { params: { include_inactive: includeInactive } }),
+
+  // 获取单个模型配置详情(包含完整 API Key)
+  get: (id: number) => api.get(`/model-configs/${id}`),
+
+  // 获取当前默认模型配置
+  getDefault: () => api.get('/model-configs/default/current'),
+
+  // 创建新模型配置
+  create: (data: {
+    name: string;
+    display_name: string;
+    description?: string;
+    api_key: string;
+    api_base: string;
+    model_name: string;
+    temperature?: string;
+    max_tokens?: number;
+    provider?: string;
+    model_type?: string;
+    is_active?: boolean;
+  }) => api.post('/model-configs/', data),
+
+  // 更新模型配置
+  update: (id: number, data: {
+    display_name?: string;
+    description?: string;
+    api_key?: string;
+    api_base?: string;
+    model_name?: string;
+    temperature?: string;
+    max_tokens?: number;
+    provider?: string;
+    model_type?: string;
+    is_active?: boolean;
+  }) => api.put(`/model-configs/${id}`, data),
+
+  // 删除模型配置
+  delete: (id: number) => api.delete(`/model-configs/${id}`),
+
+  // 设置默认模型
+  setDefault: (modelId: number) =>
+    api.post('/model-configs/set-default', { model_id: modelId }),
+}
+
 export const requirementsAPI = {
   list: (params?: any) => api.get('/requirements/', { params }),
   get: (id: number) => api.get(`/requirements/${id}`),

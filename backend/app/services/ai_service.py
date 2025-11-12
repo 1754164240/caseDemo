@@ -23,19 +23,88 @@ class GraphState(ExtTypedDict):
 class AIService:
     """AI 服务 - 使用 LangGraph 生成测试点和用例"""
 
-    def __init__(self, db: Session = None):
+    def __init__(self, db: Session = None, model_config_id: int = None):
+        """
+        初始化 AI 服务
+
+        Args:
+            db: 数据库会话
+            model_config_id: 指定使用的模型配置 ID,如果为 None 则使用默认模型
+        """
+        self.db = db
+
+        # 获取模型配置
+        model_config = self._get_model_config(model_config_id)
+
         # LangChain 1.0+ API: 使用 api_key 和 base_url 参数
+        # 处理 temperature: 如果为空字符串或 None,使用默认值 1.0
+        temp_value = model_config.get("temperature", "1.0")
+        temperature = float(temp_value) if temp_value and str(temp_value).strip() else 1.0
+
         self.llm = ChatOpenAI(
-            model=settings.MODEL_NAME,
-            api_key=settings.OPENAI_API_KEY,
-            base_url=settings.OPENAI_API_BASE if settings.OPENAI_API_BASE else None,
-            temperature=0.7
+            model=model_config["model_name"],
+            api_key=model_config["api_key"],
+            base_url=model_config["api_base"] if model_config["api_base"] else None,
+            temperature=temperature,
+            max_tokens=model_config.get("max_tokens")
         )
         self.embeddings = OpenAIEmbeddings(
-            api_key=settings.OPENAI_API_KEY,
-            base_url=settings.OPENAI_API_BASE if settings.OPENAI_API_BASE else None
+            api_key=model_config["api_key"],
+            base_url=model_config["api_base"] if model_config["api_base"] else None
         )
-        self.db = db
+
+    def _get_model_config(self, model_config_id: int = None) -> Dict[str, Any]:
+        """
+        获取模型配置
+
+        Args:
+            model_config_id: 模型配置 ID,如果为 None 则使用默认模型
+
+        Returns:
+            模型配置字典
+        """
+        # 如果有数据库连接,尝试从数据库获取配置
+        if self.db:
+            try:
+                from app.models.model_config import ModelConfig
+
+                if model_config_id:
+                    # 使用指定的模型配置
+                    config = self.db.query(ModelConfig).filter(
+                        ModelConfig.id == model_config_id,
+                        ModelConfig.is_active == True
+                    ).first()
+                else:
+                    # 使用默认模型配置
+                    config = self.db.query(ModelConfig).filter(
+                        ModelConfig.is_default == True,
+                        ModelConfig.is_active == True
+                    ).first()
+
+                if config:
+                    # 处理 temperature: 如果为空字符串或 None,使用默认值
+                    temp = config.temperature
+                    if not temp or (isinstance(temp, str) and not temp.strip()):
+                        temp = "1.0"
+
+                    return {
+                        "api_key": config.api_key,
+                        "api_base": config.api_base,
+                        "model_name": config.model_name,
+                        "temperature": temp,
+                        "max_tokens": config.max_tokens
+                    }
+            except Exception as e:
+                print(f"[WARNING] 从数据库获取模型配置失败: {e}")
+
+        # 回退到环境变量配置
+        return {
+            "api_key": settings.OPENAI_API_KEY,
+            "api_base": settings.OPENAI_API_BASE,
+            "model_name": settings.MODEL_NAME,
+            "temperature": "0.7",
+            "max_tokens": None
+        }
         
     def get_embedding(self, text: str) -> List[float]:
         """获取文本嵌入向量"""
@@ -305,7 +374,16 @@ class AIService:
 ai_service = AIService()
 
 
-def get_ai_service(db: Session = None) -> AIService:
-    """获取 AI 服务实例（支持 Prompt 配置）"""
-    return AIService(db=db)
+def get_ai_service(db: Session = None, model_config_id: int = None) -> AIService:
+    """
+    获取 AI 服务实例
+
+    Args:
+        db: 数据库会话（支持 Prompt 配置和模型配置）
+        model_config_id: 指定使用的模型配置 ID,如果为 None 则使用默认模型
+
+    Returns:
+        AIService 实例
+    """
+    return AIService(db=db, model_config_id=model_config_id)
 

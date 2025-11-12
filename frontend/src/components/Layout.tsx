@@ -9,6 +9,7 @@ import {
   UserOutlined,
   LogoutOutlined,
   BookOutlined,
+  ApiOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '../stores/authStore'
 import { wsService } from '../services/websocket'
@@ -36,6 +37,7 @@ export default function Layout({ children }: LayoutProps) {
     }
   }, [user?.id])
 
+  // 根据用户权限动态生成菜单
   const menuItems = [
     {
       key: '/',
@@ -57,12 +59,24 @@ export default function Layout({ children }: LayoutProps) {
       icon: <BookOutlined />,
       label: '知识问答',
     },
-    {
-      key: '/settings',
-      icon: <SettingOutlined />,
-      label: '系统管理',
-    },
+    // 只有管理员才能看到系统管理菜单
+    ...(user?.is_superuser ? [
+      {
+        key: '/settings',
+        icon: <SettingOutlined />,
+        label: '系统管理',
+      }
+    ] : []),
   ]
+
+  const handleUserMenuClick = ({ key }: { key: string }) => {
+    if (key === 'profile') {
+      navigate('/profile')
+    } else if (key === 'logout') {
+      logout()
+      navigate('/login')
+    }
+  }
 
   const userMenuItems = [
     {
@@ -74,10 +88,6 @@ export default function Layout({ children }: LayoutProps) {
       key: 'logout',
       icon: <LogoutOutlined />,
       label: '退出登录',
-      onClick: () => {
-        logout()
-        navigate('/login')
-      },
     },
   ]
 
@@ -136,12 +146,16 @@ export default function Layout({ children }: LayoutProps) {
           <div style={{ fontSize: 18, fontWeight: 500 }}>
             保险行业智能测试用例平台
           </div>
-          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-            <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Avatar icon={<UserOutlined />} />
-              <span>{user?.username}</span>
-            </div>
-          </Dropdown>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            {/* 版本号 */}
+            <span style={{ color: '#999', fontSize: 12 }}>v0.5.0</span>
+            <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenuClick }} placement="bottomRight">
+              <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Avatar icon={<UserOutlined />} />
+                <span>{user?.username}</span>
+              </div>
+            </Dropdown>
+          </div>
         </Header>
 
         {/* 内容区域 - 可滚动 */}

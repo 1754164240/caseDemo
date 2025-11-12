@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "postgresql+psycopg://postgres:ccb.life*123@localhost:5432/test_case_db"
+    DATABASE_URL: str = "postgresql+psycopg://postgres:175416@localhost:5432/test_case_db"
 
     # Milvus
     MILVUS_URI: str = "http://localhost:19530"
