@@ -86,14 +86,14 @@ export default function ModelConfigs({ embedded = false }: ModelConfigsProps) {
 
   const handleEdit = async (config: ModelConfig) => {
     try {
-      // 获取完整配置(包含完整 API Key)
+      // 获取完整配置(不包含 API Key)
       const response = await modelConfigAPI.get(config.id)
       setEditingConfig(response.data)
       form.setFieldsValue({
         name: response.data.name,
         display_name: response.data.display_name,
         description: response.data.description,
-        api_key: response.data.api_key,
+        // 不设置 api_key，让用户重新输入
         api_base: response.data.api_base,
         model_name: response.data.model_name,
         temperature: response.data.temperature,
@@ -344,9 +344,10 @@ export default function ModelConfigs({ embedded = false }: ModelConfigsProps) {
           <Form.Item
             name="api_key"
             label="API Key"
-            rules={[{ required: true, message: '请输入 API Key' }]}
+            rules={[{ required: !editingConfig, message: '请输入 API Key' }]}
+            extra={editingConfig ? '留空则保持原有 API Key 不变' : undefined}
           >
-            <Input.Password placeholder="请输入 API Key" />
+            <Input.Password placeholder={editingConfig ? '留空保持不变' : '请输入 API Key'} />
           </Form.Item>
 
           <Form.Item

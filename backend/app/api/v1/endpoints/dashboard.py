@@ -8,6 +8,7 @@ from app.models.user import User
 from app.models.requirement import Requirement
 from app.models.test_point import TestPoint
 from app.models.test_case import TestCase
+from app.models.model_config import ModelConfig
 from app.core.config import settings
 
 router = APIRouter()
@@ -34,10 +35,22 @@ def get_dashboard_stats(
     test_cases_count = db.query(func.count(TestCase.id)).join(TestPoint).join(Requirement).filter(
         Requirement.user_id == current_user.id
     ).scalar()
-    
-    # 当前使用模型
-    current_model = settings.MODEL_NAME
-    
+
+    # 当前使用模型 - 从模型配置表获取默认模型
+    current_model = settings.MODEL_NAME  # 默认值
+    try:
+        default_model_config = db.query(ModelConfig).filter(
+            ModelConfig.is_default == True,
+            ModelConfig.is_active == True
+        ).first()
+
+        if default_model_config:
+            # 使用 model_name
+            current_model = default_model_config.model_name
+    except Exception as e:
+        # 如果查询失败，使用环境变量中的配置
+        print(f"[WARNING] 获取默认模型配置失败: {e}")
+
     # 最近的需求
     recent_requirements = db.query(Requirement).filter(
         Requirement.user_id == current_user.id
