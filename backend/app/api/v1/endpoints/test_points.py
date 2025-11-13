@@ -56,6 +56,48 @@ def generate_test_point_code(db: Session) -> str:
     return "TP-001"
 
 
+def _extract_code_number(code: Optional[str]) -> int:
+    if not code:
+        return 0
+    try:
+        parts = code.split('-')
+        return int(parts[-1])
+    except Exception:
+        digits = ''.join(ch for ch in code if ch.isdigit())
+        return int(digits) if digits else 0
+
+
+def _ensure_regeneration_allowed(db: Session, requirement_id: int, force: bool) -> None:
+    """在重新生成前验证是否存在已使用的测试点"""
+    case_count = (
+        db.query(func.count(TestCase.id))
+        .join(TestPoint, TestCase.test_point_id == TestPoint.id)
+        .filter(TestPoint.requirement_id == requirement_id)
+        .scalar()
+    )
+    approved_count = (
+        db.query(func.count(TestPoint.id))
+        .filter(
+            TestPoint.requirement_id == requirement_id,
+            TestPoint.approval_status == "approved",
+        )
+        .scalar()
+    )
+    if (case_count > 0 or approved_count > 0) and not force:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "test_points_in_use",
+                "cases": case_count,
+                "approved": approved_count,
+                "message": (
+                    f"检测到该需求已有 {case_count} 条关联测试用例或 {approved_count} 条已审批测试点，"
+                    "若继续重新生成将会清理这些数据，请确认后重试。"
+                ),
+            },
+        )
+
+
 def _record_history_entry(
     db: Session,
     test_point: TestPoint,
@@ -157,44 +199,42 @@ def regenerate_test_points_background(
     requirement_id: int,
     user_feedback: str,
     user_id: int,
+    force: bool = False,
     loop: Optional[asyncio.AbstractEventLoop] = None
 ):
-    """后台重新生成测试点（在线程池中运行）"""
+    """??????????????????"""
     db = SessionLocal()
     try:
         requirement = db.query(Requirement).filter(Requirement.id == requirement_id).first()
         if not requirement:
             return
 
-        # 更新状态为处理中
         requirement.status = RequirementStatus.PROCESSING
         db.commit()
 
-        print(f"[INFO] 开始重新生成测试点，需求 ID: {requirement_id}")
+        print(f"[INFO] ????????????ID: {requirement_id}?force={force}?")
 
-        # 解析文档
         text = DocumentParser.parse(requirement.file_path, requirement.file_type.value)
         if not text:
-            raise ValueError("文档解析失败，内容为空")
+            raise ValueError("???????????")
 
         quality = DocumentParser.evaluate_quality(text)
         print(
-            "[INFO] 文档解析成功，"
-            f"文本长度 {len(text)}，有效字符 {quality['meaningful_chars']}, "
-            f"非空行占比 {quality['non_empty_ratio']:.2%}"
+            "[INFO] ???????"
+            f"???? {len(text)}????? {quality['meaningful_chars']}, "
+            f"????? {quality['non_empty_ratio']:.2%}"
         )
         if quality["meaningful_chars"] < settings.MIN_REQUIREMENT_CHARACTERS:
-            raise ValueError("文档有效字符过少，无法重新生成测试点")
+            raise ValueError("??????????????????")
         if quality["non_empty_ratio"] < settings.MIN_NON_EMPTY_LINE_RATIO:
-            raise ValueError("文档空行过多，请检查源文件格式")
+            raise ValueError("???????????????")
 
         chunks = document_embedding_service.split_text(text)
         ai_context = document_embedding_service.build_ai_context(chunks)
         if not ai_context:
             ai_context = text[: settings.TEST_POINT_MAX_INPUT_CHARS]
-            print("[WARNING] 切分内容为空，使用原始文本截断作为上下文")
+            print("[WARNING] ????????????????????")
 
-        # 使用 AI 重新生成测试点（带用户反馈）
         ai_svc = get_ai_service(db)
         test_points_data = ai_svc.extract_test_points(
             ai_context,
@@ -202,50 +242,72 @@ def regenerate_test_points_background(
             allow_fallback=False,
         )
 
-        print(f"[INFO] 成功生成 {len(test_points_data)} 个测试点")
+        if not test_points_data:
+            raise ValueError("AI ????????")
 
-        # 保存新的测试点
+        print(f"[INFO] ???? {len(test_points_data)} ????")
+
+        latest_code_value = db.query(func.max(TestPoint.code)).scalar()
+        next_code_num = _extract_code_number(latest_code_value)
+
+        def allocate_code() -> str:
+            nonlocal next_code_num
+            next_code_num += 1
+            return f"TP-{next_code_num:03d}"
+
+        new_test_points: List[TestPoint] = []
         for tp_data in test_points_data:
-            code = generate_test_point_code(db)
-            test_point = TestPoint(
-                requirement_id=requirement_id,
-                code=code,
-                title=tp_data.get('title', ''),
-                description=tp_data.get('description', ''),
-                category=tp_data.get('category', ''),
-                priority=tp_data.get('priority', 'medium'),
-                business_line=tp_data.get('business_line', ''),
-                user_feedback=user_feedback
+            new_test_points.append(
+                TestPoint(
+                    requirement_id=requirement_id,
+                    code=allocate_code(),
+                    title=tp_data.get('title', ''),
+                    description=tp_data.get('description', ''),
+                    category=tp_data.get('category', ''),
+                    priority=tp_data.get('priority', 'medium'),
+                    business_line=tp_data.get('business_line', ''),
+                    user_feedback=user_feedback,
+                )
             )
-            db.add(test_point)
-            db.flush()  # 确保编号被保存，以便下一个测试点能获取正确的编号
 
-        # 更新需求状态为已完成
+        existing_point_ids = [
+            tp.id
+            for tp in db.query(TestPoint.id).filter(TestPoint.requirement_id == requirement_id).all()
+        ]
+        if existing_point_ids:
+            db.query(TestCase).filter(TestCase.test_point_id.in_(existing_point_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(TestPointHistory).filter(TestPointHistory.test_point_id.in_(existing_point_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(TestPoint).filter(TestPoint.id.in_(existing_point_ids)).delete(synchronize_session=False)
+
+        db.add_all(new_test_points)
+
         requirement.status = RequirementStatus.COMPLETED
         db.commit()
 
-        print(f"[INFO] 测试点重新生成完成，需求 ID: {requirement_id}")
+        print(f"[INFO] ????????????ID: {requirement_id}")
 
-        # 发送通知
         _run_async_notification(
             loop,
             manager.notify_test_point_generated(user_id, requirement_id, len(test_points_data)),
-            "发送测试点生成通知失败"
+            "???????????"
         )
 
     except Exception as e:
-        print(f"[ERROR] 重新生成测试点失败: {e}")
+        print(f"[ERROR] ?????????: {e}")
         import traceback
         traceback.print_exc()
 
-        # 更新状态为失败
         try:
             requirement = db.query(Requirement).filter(Requirement.id == requirement_id).first()
             if requirement:
                 requirement.status = RequirementStatus.FAILED
                 db.commit()
         except Exception as update_error:
-            print(f"[ERROR] 更新状态失败: {update_error}")
+            print(f"[ERROR] ??????: {update_error}")
     finally:
         db.close()
 
@@ -519,6 +581,8 @@ async def submit_feedback(
     # 保存反馈
     test_point.user_feedback = feedback
     db.commit()
+
+    _ensure_regeneration_allowed(db, test_point.requirement_id, force=False)
     
     # 后台重新生成测试点
     loop = asyncio.get_running_loop()
@@ -527,6 +591,7 @@ async def submit_feedback(
         test_point.requirement_id,
         feedback,
         current_user.id,
+        False,
         loop
     )
     
@@ -537,12 +602,12 @@ async def submit_feedback(
 async def regenerate_test_points(
     requirement_id: int,
     background_tasks: BackgroundTasks,
-    feedback: str = None,
+    feedback: Optional[str] = None,
+    force: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """重新生成需求的测试点"""
-    # 验证需求是否属于当前用户
     requirement = db.query(Requirement).filter(
         Requirement.id == requirement_id,
         Requirement.user_id == current_user.id
@@ -551,24 +616,15 @@ async def regenerate_test_points(
     if not requirement:
         raise HTTPException(status_code=404, detail="Requirement not found")
 
-    # 获取该需求下的所有测试点ID
-    test_point_ids = [tp.id for tp in db.query(TestPoint).filter(TestPoint.requirement_id == requirement_id).all()]
+    _ensure_regeneration_allowed(db, requirement_id, force)
 
-    # 先删除所有相关的测试用例
-    if test_point_ids:
-        db.query(TestCase).filter(TestCase.test_point_id.in_(test_point_ids)).delete(synchronize_session=False)
-
-    # 再删除该需求下的所有旧测试点
-    db.query(TestPoint).filter(TestPoint.requirement_id == requirement_id).delete(synchronize_session=False)
-    db.commit()
-
-    # 后台重新生成测试点
     loop = asyncio.get_running_loop()
     background_tasks.add_task(
         regenerate_test_points_background,
         requirement_id,
         feedback or "",
         current_user.id,
+        force,
         loop
     )
 

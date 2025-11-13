@@ -218,8 +218,22 @@ export const testPointsAPI = {
   delete: (id: number) => api.delete(`/test-points/${id}`),
   submitFeedback: (id: number, feedback: string) =>
     api.post(`/test-points/${id}/feedback`, null, { params: { feedback } }),
-  regenerate: (requirementId: number, feedback?: string) =>
-    api.post(`/test-points/regenerate/${requirementId}`, null, { params: { feedback } }),
+  regenerate: (
+    requirementId: number,
+    params?: { feedback?: string; force?: boolean }
+  ) => api.post(`/test-points/regenerate/${requirementId}`, null, { params: params || {} }),
+  history: (id: number) => api.get(`/test-points/${id}/history`),
+  bulkUpdate: (data: {
+    requirement_id: number
+    updates: Array<{
+      id: number
+      title?: string
+      description?: string
+      category?: string
+      priority?: string
+      business_line?: string
+    }>
+  }) => api.post('/test-points/bulk-update', data),
   // 审批相关
   approve: (id: number, data: { approval_status: string; approval_comment?: string }) =>
     api.post(`/test-points/${id}/approve`, data),
