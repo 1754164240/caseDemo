@@ -31,7 +31,7 @@ interface HistoryEntry {
 }
 
 const BUSINESS_LINE_OPTIONS = [
-  { value: 'contract', label: '合同/单位' },
+  { value: 'contract', label: '契约' },
   { value: 'preservation', label: '保全' },
   { value: 'claim', label: '理赔' },
 ]
