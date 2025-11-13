@@ -480,6 +480,7 @@ export default function TestCases() {
       title: '操作',
       key: 'action',
       width: 350,
+      fixed: 'right' as const,
       render: (_: any, record: any) => (
         <Space>
           <Button
@@ -640,6 +641,7 @@ export default function TestCases() {
       title: '操作',
       key: 'action',
       width: 300,
+      fixed: 'right' as const,
       render: (_: any, record: any) => (
         <Space>
           <Button

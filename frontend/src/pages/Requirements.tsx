@@ -275,6 +275,7 @@ export default function Requirements() {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
+      width: 100,
       render: (status: string) => {
         const colorMap: any = {
           uploaded: 'blue',
@@ -311,6 +312,7 @@ export default function Requirements() {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
+      width: 160,
       render: (text: string) => dayjs(text).format('YYYY-MM-DD HH:mm'),
       minWidth: 150,
       align: 'center' as const,
@@ -469,6 +471,7 @@ export default function Requirements() {
         columns={columns}
         rowKey="id"
         loading={loading}
+        scroll={{ x: 'max-content' }}
       />
 
       <Modal
