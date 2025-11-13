@@ -91,6 +91,20 @@ export default function Requirements() {
   }, [loadRequirements])
 
   useEffect(() => {
+    const handleFailure = (event: Event) => {
+      const detail = (event as CustomEvent<any>).detail
+      const requirementId =
+        typeof detail === 'number' ? detail : detail?.requirement_id ?? detail?.requirementId
+      if (requirementId && processingRequirementIdRef.current === requirementId) {
+        setProcessingRequirementId(null)
+      }
+      loadRequirements()
+    }
+    window.addEventListener('test-points-failed', handleFailure)
+    return () => window.removeEventListener('test-points-failed', handleFailure)
+  }, [loadRequirements])
+
+  useEffect(() => {
     const handleReady = (event: Event) => {
       const requirementId = (event as CustomEvent<number | undefined>).detail
       if (!requirementId) return

@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Modal, Table, message, Form, Input, Tag, Empty, Timeline, Button, Select, Space } from 'antd'
+import { Modal, Table, message, Form, Input, Tag, Empty, Timeline, Button, Select, Space, Alert } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { testPointsAPI } from '../services/api'
 
@@ -69,6 +69,8 @@ export default function TestPointsModal({
   const [editedRows, setEditedRows] = useState<Record<number, Partial<TestPointItem>>>({})
   const [savingChanges, setSavingChanges] = useState(false)
   const [awaitingRegenResult, setAwaitingRegenResult] = useState(false)
+  const [optimizationError, setOptimizationError] = useState<string | null>(null)
+  const awaitingRegenRef = useRef(false)
   const testPointsSnapshotRef = useRef('[]')
   const originalTestPointsRef = useRef<Record<number, TestPointItem>>({})
   const latestSnapshotRef = useRef<TestPointItem[]>([])
@@ -123,6 +125,11 @@ export default function TestPointsModal({
   }, [historySnapshots, isLatestHistorySelected, selectedHistoryVersion, testPoints])
   const editingDisabled = !isLatestHistorySelected
 
+  const serializeSnapshot = (list: TestPointItem[]) => {
+    const sorted = [...list].sort((a, b) => a.id - b.id)
+    return JSON.stringify(sorted)
+  }
+
   const syncSnapshots = (list: TestPointItem[], resetEdits: boolean) => {
     latestSnapshotRef.current = list.map((item) => ({ ...item }))
     const map: Record<number, TestPointItem> = {}
@@ -145,18 +152,39 @@ export default function TestPointsModal({
     onProcessingEnd?.()
   }
 
-  const loadTestPoints = async (options?: { keepOptimizing?: boolean; forceSelectLatest?: boolean }) => {
+  const loadTestPoints = async (options?: {
+    keepOptimizing?: boolean
+    forceSelectLatest?: boolean
+    silent?: boolean
+    preserveOrder?: boolean
+  }) => {
     if (!requirement) return
-    const shouldShowTableLoading = !options?.keepOptimizing
+    const shouldShowTableLoading = !options?.keepOptimizing && !options?.silent
     if (shouldShowTableLoading) {
       setTableLoading(true)
     }
+    const preserveOrderIds = options?.preserveOrder ? testPoints.map((item) => item.id) : null
     let hasChanged = false
     let fetchedData: TestPointItem[] = []
     try {
       const response = await testPointsAPI.list({ requirement_id: requirement.id, limit: 500 })
       fetchedData = response.data || []
-      const nextSnapshot = JSON.stringify(fetchedData)
+      if (preserveOrderIds && preserveOrderIds.length) {
+        const lookup = new Map(fetchedData.map((item) => [item.id, item]))
+        const ordered: TestPointItem[] = []
+        preserveOrderIds.forEach((id) => {
+          const item = lookup.get(id)
+          if (item) {
+            ordered.push(item)
+            lookup.delete(id)
+          }
+        })
+        if (lookup.size) {
+          ordered.push(...lookup.values())
+        }
+        fetchedData = ordered
+      }
+      const nextSnapshot = serializeSnapshot(fetchedData)
       hasChanged = nextSnapshot !== testPointsSnapshotRef.current
       setTestPoints(fetchedData)
       testPointsSnapshotRef.current = nextSnapshot
@@ -187,7 +215,7 @@ export default function TestPointsModal({
       loadTestPoints()
     } else {
       setTestPoints([])
-      testPointsSnapshotRef.current = '[]'
+      testPointsSnapshotRef.current = serializeSnapshot([])
       setHistoryVersions([])
       setSelectedVersion(null)
       setHistorySnapshots({})
@@ -196,6 +224,7 @@ export default function TestPointsModal({
       originalTestPointsRef.current = {}
       latestSnapshotRef.current = []
       promptForm.resetFields()
+      setOptimizationError(null)
     }
   }, [open, requirement])
 
@@ -204,12 +233,40 @@ export default function TestPointsModal({
     const handler = (event: Event) => {
       const reqId = (event as CustomEvent<number | undefined>).detail
       if (reqId === requirement.id) {
-        loadTestPoints({ forceSelectLatest: true }).then(() => finalizeOptimization())
+          const shouldForceLatest = awaitingRegenRef.current
+          loadTestPoints({ forceSelectLatest: shouldForceLatest }).then(() => {
+            if (awaitingRegenRef.current) {
+              finalizeOptimization()
+            }
+          })
       }
     }
     window.addEventListener('test-points-updated', handler)
     return () => window.removeEventListener('test-points-updated', handler)
   }, [requirement, onProcessingEnd])
+
+  useEffect(() => {
+    if (!requirement) return
+    const handleFailure = (event: Event) => {
+      const detail = (event as CustomEvent<any>).detail
+      const targetRequirementId =
+        typeof detail === 'number' ? detail : detail?.requirement_id ?? detail?.requirementId
+      if (!targetRequirementId || targetRequirementId !== requirement.id) {
+        return
+      }
+      if (!awaitingRegenRef.current && !optimizing) {
+        return
+      }
+      const errorText =
+        typeof detail === 'object'
+          ? detail?.error || detail?.message || '重新生成测试点失败，请稍后重试'
+          : '重新生成测试点失败，请稍后重试'
+      setOptimizationError(errorText)
+      finalizeOptimization()
+    }
+    window.addEventListener('test-points-failed', handleFailure)
+    return () => window.removeEventListener('test-points-failed', handleFailure)
+  }, [requirement, optimizing])
 
   useEffect(() => {
     if (!optimizing || !requirement) return
@@ -231,6 +288,10 @@ export default function TestPointsModal({
   useEffect(() => {
     refreshHistoryVersions()
   }, [refreshHistoryVersions])
+
+  useEffect(() => {
+    awaitingRegenRef.current = awaitingRegenResult
+  }, [awaitingRegenResult])
 
   useEffect(() => {
     if (!requirement || !selectedHistoryVersion || isLatestHistorySelected) {
@@ -285,20 +346,34 @@ export default function TestPointsModal({
     }
     const values = promptForm.getFieldsValue()
     const promptText = (values.prompt || '').trim()
+    setOptimizationError(null)
+    const loadingKey = `optimize-${requirement.id}`
+    const startOptimization = () => {
+      setAwaitingRegenResult(true)
+      awaitingRegenRef.current = true
+      setOptimizing(true)
+      onProcessingStart?.(requirement.id)
+      message.loading({
+        content: '提示词已提交，正在重新生成测试点...',
+        key: loadingKey,
+        duration: 0,
+      })
+    }
+    const resetOptimization = () => {
+      setAwaitingRegenResult(false)
+      awaitingRegenRef.current = false
+      setOptimizing(false)
+      onProcessingEnd?.()
+      message.destroy(loadingKey)
+    }
+    startOptimization()
     try {
       await testPointsAPI.regenerate(requirement.id, {
         feedback: promptText || undefined,
         force,
       })
-      setAwaitingRegenResult(true)
-      setOptimizing(true)
-      onProcessingStart?.(requirement.id)
-      message.loading({
-        content: '提示词已提交，正在重新生成测试点...',
-        key: `optimize-${requirement.id}`,
-        duration: 0,
-      })
     } catch (error: any) {
+      resetOptimization()
       const detail = error.response?.data?.detail
       if (!force && detail?.code === 'test_points_in_use') {
         Modal.confirm({
@@ -312,7 +387,9 @@ export default function TestPointsModal({
         })
         return
       }
-      message.error(detail?.message || detail || '提交重新生成失败')
+      const errorMessage = detail?.message || detail || '提交重新生成失败'
+      setOptimizationError(errorMessage)
+      message.error(errorMessage)
     }
   }
 
@@ -377,21 +454,7 @@ export default function TestPointsModal({
       })
       message.success('保存成功')
       setEditedRows({})
-
-      // 保持当前列表顺序，直接更新状态而不重新加载
-      setTestPoints(prev => {
-        const updated = [...prev]
-        Object.entries(currentEdits).forEach(([id, payload]) => {
-          const index = updated.findIndex(tp => tp.id === Number(id))
-          if (index !== -1) {
-            updated[index] = { ...updated[index], ...payload }
-          }
-        })
-        return updated
-      })
-
-      // 同步更新快照数据
-      syncSnapshots(testPoints.map((item) => ({ ...item })), false)
+      await loadTestPoints({ silent: true, preserveOrder: true })
     } catch (error: any) {
       message.error(error.response?.data?.detail || '保存失败')
     } finally {
@@ -516,6 +579,16 @@ export default function TestPointsModal({
           }}
         >
           <div style={{ flex: '0 0 75%', maxWidth: '75%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            {optimizationError && (
+              <Alert
+                type="error"
+                showIcon
+                closable
+                message={optimizationError}
+                onClose={() => setOptimizationError(null)}
+                style={{ marginBottom: 12 }}
+              />
+            )}
             <div
               style={{
                 display: 'flex',
@@ -524,14 +597,14 @@ export default function TestPointsModal({
                 marginBottom: 8,
               }}
             >
-              <div style={{ color: editingDisabled ? '#999' : hasPendingEdits ? '#fa8c16' : '#999', fontSize: 12 }}>
+              <div style={{ color: editingDisabled ? '#ff4d4f' : hasPendingEdits ? '#fa8c16' : '#52c41a', fontSize: 12 }}>
                 {editingDisabled
                   ? selectedHistoryVersion
-                    ? `当前查看历史版本 ${selectedHistoryVersion}，仅支持查看`
+                    ? `📖 当前查看历史版本 ${selectedHistoryVersion}，仅支持查看`
                     : '无可用版本'
                   : hasPendingEdits
-                    ? `已修改 ${Object.keys(editedRows).length} 条，点击“保存修改”生效`
-                    : '点击表格单元格即可行内编辑'}
+                    ? `⚠️ 已修改 ${Object.keys(editedRows).length} 条，点击"保存修改"生效`
+                    : '✏️ 点击表格单元格即可行内编辑'}
               </div>
               <Space>
                 <Button onClick={handleResetEdits} disabled={!hasPendingEdits || editingDisabled}>
@@ -602,21 +675,6 @@ export default function TestPointsModal({
             </div>
           </div>
 
-          {optimizing && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: 'rgba(255,255,255,0.65)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                pointerEvents: 'auto',
-              }}
-            >
-              模型生成中...
-            </div>
-          )}
         </div>
       )}
     </Modal>

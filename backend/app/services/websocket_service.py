@@ -57,6 +57,15 @@ class ConnectionManager:
         }
         await self.send_personal_message(message, user_id)
     
+    async def notify_test_point_failed(self, user_id: int, requirement_id: int, error_message: str):
+        """Notify client that test point regeneration failed"""
+        message = {
+            "type": "test_points_failed",
+            "requirement_id": requirement_id,
+            "message": error_message,
+        }
+        await self.send_personal_message(message, user_id)
+    
     async def notify_test_case_generated(self, user_id: int, test_point_id: int, test_cases_count: int):
         """通知测试用例生成完成"""
         message = {

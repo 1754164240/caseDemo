@@ -62,6 +62,24 @@ class WebSocketService {
         )
         break
       }
+      case 'test_points_failed': {
+        const errorMessage = data.message || '重新生成测试点失败，请稍后重试'
+        const messageKey = data.requirement_id ? `requirement-${data.requirement_id}` : undefined
+        if (messageKey) {
+          message.error({ content: errorMessage, key: messageKey, duration: 5 })
+        } else {
+          message.error(errorMessage)
+        }
+        window.dispatchEvent(
+          new CustomEvent('test-points-failed', {
+            detail: {
+              requirement_id: data.requirement_id,
+              error: errorMessage,
+            },
+          })
+        )
+        break
+      }
       case 'test_cases_generated': {
         const messageKey = data.test_point_id ? `test-point-${data.test_point_id}` : undefined
         if (messageKey) {

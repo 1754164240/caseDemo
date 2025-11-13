@@ -365,6 +365,8 @@ def regenerate_test_points_background(
         import traceback
         traceback.print_exc()
 
+        error_message = str(e).strip() or "重新生成测试点失败，请稍后重试"
+
         try:
             requirement = db.query(Requirement).filter(Requirement.id == requirement_id).first()
             if requirement:
@@ -372,6 +374,16 @@ def regenerate_test_points_background(
                 db.commit()
         except Exception as update_error:
             print(f"[ERROR] 更新需求状态失败: {update_error}")
+        
+        _run_async_notification(
+            loop,
+            manager.notify_test_point_failed(
+                user_id,
+                requirement_id,
+                error_message[:200],
+            ),
+            "通知测试点重新生成失败",
+        )
     finally:
         db.close()
 
