@@ -322,6 +322,7 @@ export default function Requirements() {
       key: 'action',
       minWidth: 200,
       align: 'center' as const,
+      fixed: 'right' as const,  // ✅ 添加固定到右侧
       render: (_: any, record: any) => (
         <Space size={2}>
           <Button
