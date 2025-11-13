@@ -465,7 +465,7 @@ export default function TestPointsModal({
               <h4 style={{ marginBottom: 12 }}>业务提示词调优</h4>
               <Form layout="vertical" form={promptForm}>
                 <Form.Item name="prompt" label={null}>
-                  <Input.TextArea rows={8} placeholder="请输入契合当前业务场景的统一提示词调优说明" />
+                  <Input.TextArea rows={7} placeholder="请输入契合当前业务场景的统一提示词调优说明" />
                 </Form.Item>
                 <Button type="primary" block onClick={handleOptimize}>
                   重新生成测试点
