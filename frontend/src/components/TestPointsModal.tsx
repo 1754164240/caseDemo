@@ -75,15 +75,13 @@ export default function TestPointsModal({
     }
   }
 
-  const finalizeOptimization = (showSuccess = true) => {
+  const finalizeOptimization = () => {
     setOptimizing(false)
     setAwaitingRegenResult(false)
     if (requirement?.id) {
       message.destroy(`optimize-${requirement.id}`)
     }
-    if (showSuccess) {
-      message.success('测试点已更新')
-    }
+    // 移除重复的成功提示，WebSocket已经处理了提示消息
     onProcessingEnd?.()
   }
 
@@ -161,7 +159,7 @@ export default function TestPointsModal({
       loadTestPoints({ keepOptimizing: true })
     }, 4000)
     const safetyTimer = window.setTimeout(() => {
-      finalizeOptimization(false)
+      finalizeOptimization()
       message.warning('提示词生成结果超时，已停止等待')
     }, 45000)
     // 立即拉取一次，避免等待首个间隔
@@ -269,8 +267,12 @@ export default function TestPointsModal({
   const handleSaveChanges = async () => {
     if (!requirement || !hasPendingEdits) return
     setSavingChanges(true)
+
+    // 保存当前编辑数据，避免清空后无法使用
+    const currentEdits = { ...editedRows }
+
     try {
-      const updates = Object.entries(editedRows).map(([id, payload]) => ({
+      const updates = Object.entries(currentEdits).map(([id, payload]) => ({
         id: Number(id),
         ...payload,
       }))
@@ -280,7 +282,21 @@ export default function TestPointsModal({
       })
       message.success('保存成功')
       setEditedRows({})
-      await loadTestPoints()
+
+      // 保持当前列表顺序，直接更新状态而不重新加载
+      setTestPoints(prev => {
+        const updated = [...prev]
+        Object.entries(currentEdits).forEach(([id, payload]) => {
+          const index = updated.findIndex(tp => tp.id === Number(id))
+          if (index !== -1) {
+            updated[index] = { ...updated[index], ...payload }
+          }
+        })
+        return updated
+      })
+
+      // 同步更新快照数据
+      syncSnapshots(testPoints.map((item) => ({ ...item })), false)
     } catch (error: any) {
       message.error(error.response?.data?.detail || '保存失败')
     } finally {

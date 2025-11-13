@@ -202,7 +202,7 @@ def regenerate_test_points_background(
     force: bool = False,
     loop: Optional[asyncio.AbstractEventLoop] = None
 ):
-    """??????????????????"""
+    """重新生成测试点后台任务"""
     db = SessionLocal()
     try:
         requirement = db.query(Requirement).filter(Requirement.id == requirement_id).first()
@@ -212,28 +212,28 @@ def regenerate_test_points_background(
         requirement.status = RequirementStatus.PROCESSING
         db.commit()
 
-        print(f"[INFO] ????????????ID: {requirement_id}?force={force}?")
+        print(f"[INFO] 开始重新生成测试点，需求ID: {requirement_id}, force={force}")
 
         text = DocumentParser.parse(requirement.file_path, requirement.file_type.value)
         if not text:
-            raise ValueError("???????????")
+            raise ValueError("解析需求文档失败")
 
         quality = DocumentParser.evaluate_quality(text)
         print(
-            "[INFO] ???????"
-            f"???? {len(text)}????? {quality['meaningful_chars']}, "
-            f"????? {quality['non_empty_ratio']:.2%}"
+            "[INFO] 文档质量分析："
+            f"总字符数 {len(text)}，有效字符 {quality['meaningful_chars']}, "
+            f"非空行比例 {quality['non_empty_ratio']:.2%}"
         )
         if quality["meaningful_chars"] < settings.MIN_REQUIREMENT_CHARACTERS:
-            raise ValueError("??????????????????")
+            raise ValueError("需求文档字符数不足")
         if quality["non_empty_ratio"] < settings.MIN_NON_EMPTY_LINE_RATIO:
-            raise ValueError("???????????????")
+            raise ValueError("需求文档内容过于稀疏")
 
         chunks = document_embedding_service.split_text(text)
         ai_context = document_embedding_service.build_ai_context(chunks)
         if not ai_context:
             ai_context = text[: settings.TEST_POINT_MAX_INPUT_CHARS]
-            print("[WARNING] ????????????????????")
+            print("[WARNING] 向量检索失败，使用原始文本作为上下文")
 
         ai_svc = get_ai_service(db)
         test_points_data = ai_svc.extract_test_points(
@@ -243,9 +243,9 @@ def regenerate_test_points_background(
         )
 
         if not test_points_data:
-            raise ValueError("AI ????????")
+            raise ValueError("AI 未能生成测试点")
 
-        print(f"[INFO] ???? {len(test_points_data)} ????")
+        print(f"[INFO] 成功生成 {len(test_points_data)} 个测试点")
 
         latest_code_value = db.query(func.max(TestPoint.code)).scalar()
         next_code_num = _extract_code_number(latest_code_value)
@@ -288,16 +288,16 @@ def regenerate_test_points_background(
         requirement.status = RequirementStatus.COMPLETED
         db.commit()
 
-        print(f"[INFO] ????????????ID: {requirement_id}")
+        print(f"[INFO] 测试点重新生成完成，需求ID: {requirement_id}")
 
         _run_async_notification(
             loop,
             manager.notify_test_point_generated(user_id, requirement_id, len(test_points_data)),
-            "???????????"
+            "发送测试点生成通知失败"
         )
 
     except Exception as e:
-        print(f"[ERROR] ?????????: {e}")
+        print(f"[ERROR] 重新生成测试点失败: {e}")
         import traceback
         traceback.print_exc()
 
@@ -307,7 +307,7 @@ def regenerate_test_points_background(
                 requirement.status = RequirementStatus.FAILED
                 db.commit()
         except Exception as update_error:
-            print(f"[ERROR] ??????: {update_error}")
+            print(f"[ERROR] 更新需求状态失败: {update_error}")
     finally:
         db.close()
 
@@ -478,6 +478,9 @@ def read_test_points(
             (TestPoint.description.ilike(search_pattern)) |
             (TestPoint.category.ilike(search_pattern))
         )
+
+    # 默认按编号排序，确保列表顺序稳定
+    query = query.order_by(TestPoint.code)
 
     test_points = query.offset(skip).limit(limit).all()
 
