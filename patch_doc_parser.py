@@ -1,0 +1,16 @@
+from pathlib import Path
+from docx import Document
+
+path = Path(r'backend/app/services/document_parser.py')
+text = path.read_text(encoding='utf-8')
+old = "    @staticmethod\r\n    def parse_docx(file_path: str) -> str:\r\n        try:\r\n            doc = Document(file_path)\r\n            text = [paragraph.text for paragraph in doc.paragraphs if paragraph.text.strip()]\r\n            result = \"\\n\".join(text)\r\n            print(f\"[INFO] DOCX 解析成功，提�?{len(text)} 个段�?)\r\n            return result\r\n        except Exception as exc:\r\n            print(f\"[ERROR] DOCX 解析失败: {exc}\")\r\n            raise\r\n"
+
+helper = "    @staticmethod\r\n    def _collect_docx_text(doc: Document) -> List[str]:\r\n        \"\"\"Extract paragraph/table/header/footer text from a DOCX document.\"\"\"\r\n        blocks: List[str] = []\r\n\r\n        def collect(container):\r\n            if container is None:\r\n                return\r\n\r\n            for paragraph in getattr(container, \"paragraphs\", []):\r\n                text = paragraph.text.strip()\r\n                if text:\r\n                    blocks.append(text)\r\n\r\n            for table in getattr(container, \"tables\", []):\r\n                for row in table.rows:\r\n                    row_cells: List[str] = []\r\n                    seen_cells = set()\r\n                    for cell in row.cells:\r\n                        cell_id = id(getattr(cell, \"_tc\", cell))\r\n                        if cell_id in seen_cells:\r\n                            continue\r\n                        seen_cells.add(cell_id)\r\n                        cell_text_chunks = [\r\n                            para.text.strip()\r\n                            for para in getattr(cell, \"paragraphs\", [])\r\n                            if para.text.strip()\r\n                        ]\r\n                        cell_text = \" \\".join(cell_text_chunks).strip()\r\n                        if cell_text:\r\n                            row_cells.append(cell_text)\r\n                        collect(cell)\r\n                    if row_cells:\r\n                        blocks.append(\" | \\".join(row_cells))\r\n\r\n        collect(doc)\r\n        for section in getattr(doc, \"sections\", []):\r\n            collect(section.header)\r\n            collect(section.footer)\r\n\r\n        return blocks\r\n\r\n"
+
+new_parse = "    @staticmethod\r\n    def parse_docx(file_path: str) -> str:\r\n        try:\r\n            doc = Document(file_path)\r\n            text_blocks = DocumentParser._collect_docx_text(doc)\r\n            result = \"\\n\".join(text_blocks)\r\n            print(f\"[INFO] DOCX 解析成功，提�?{len(text_blocks)} 个段�?)\r\n            return result\r\n        except Exception as exc:\r\n            print(f\"[ERROR] DOCX 解析失败: {exc}\")\r\n            raise\r\n"
+
+if old not in text:
+    raise SystemExit('pattern not found')
+text = text.replace("class DocumentParser:\r\n    \"\"\"文档解析服务，负责不同格式的文本抽取\"\"\"\r\n\r\n    MAX_CONSECUTIVE_EMPTY_ROWS = 2000\r\n\r\n", "class DocumentParser:\r\n    \"\"\"文档解析服务，负责不同格式的文本抽取\"\"\"\r\n\r\n    MAX_CONSECUTIVE_EMPTY_ROWS = 2000\r\n\r\n" + helper)
+text = text.replace(old, new_parse, 1)
+path.write_text(text, encoding='utf-8')
