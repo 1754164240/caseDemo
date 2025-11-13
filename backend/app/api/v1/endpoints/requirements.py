@@ -232,7 +232,7 @@ async def create_requirement(
     # 验证文件类型
     file_ext = file.filename.split('.')[-1].lower()
     if file_ext not in ['docx', 'pdf', 'txt', 'xls', 'xlsx']:
-        raise HTTPException(status_code=400, detail="Unsupported file type")
+        raise HTTPException(status_code=400, detail="不支持的文件类型")
     
     # 保存文件
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -285,7 +285,7 @@ def read_requirements(
     skip: int = 0,
     limit: int = 100,
     search: Optional[str] = Query(None, description="Search by title or file name"),
-    file_category: Optional[str] = Query(None, description="Filter by file category: word/excel/pdf (comma separated for multi-select)"),
+    file_category: Optional[str] = Query(None, description="Filter by file type: docx/pdf/txt/xls/xlsx (comma separated for multi-select)"),
     statuses: Optional[str] = Query(None, description="Filter by statuses, comma separated"),
     start_date: Optional[datetime] = Query(None, description="Filter by created_at start time"),
     end_date: Optional[datetime] = Query(None, description="Filter by created_at end time"),
@@ -305,15 +305,19 @@ def read_requirements(
         )
 
     if file_category:
-        selected_categories = [c.strip().lower() for c in file_category.split(",") if c.strip()]
-        file_category_mapping = {
-            "word": [FileType.DOCX],
-            "excel": [FileType.XLS, FileType.XLSX],
-            "pdf": [FileType.PDF],
+        selected_types = [c.strip().lower() for c in file_category.split(",") if c.strip()]
+        # 直接映射到具体的文件类型
+        file_type_mapping = {
+            "docx": FileType.DOCX,
+            "pdf": FileType.PDF,
+            "txt": FileType.TXT,
+            "xls": FileType.XLS,
+            "xlsx": FileType.XLSX,
         }
         allowed_types = []
-        for category in selected_categories:
-            allowed_types.extend(file_category_mapping.get(category, []))
+        for type_name in selected_types:
+            if type_name in file_type_mapping:
+                allowed_types.append(file_type_mapping[type_name])
         if allowed_types:
             query = query.filter(Requirement.file_type.in_(allowed_types))
 

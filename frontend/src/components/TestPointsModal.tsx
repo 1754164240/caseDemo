@@ -161,7 +161,7 @@ export default function TestPointsModal({
     const safetyTimer = window.setTimeout(() => {
       finalizeOptimization()
       message.warning('提示词生成结果超时，已停止等待')
-    }, 45000)
+    }, 600000) // 增加到10分钟
     // 立即拉取一次，避免等待首个间隔
     loadTestPoints({ keepOptimizing: true })
     return () => {

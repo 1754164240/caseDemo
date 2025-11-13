@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, ChangeEvent } from 'react'
 import { Table, Button, Upload, Modal, Form, Input, message, Tag, Space, Popconfirm, Descriptions, Drawer, Select, DatePicker } from 'antd'
-import { UploadOutlined, EyeOutlined, DeleteOutlined, DownloadOutlined, ToolOutlined } from '@ant-design/icons'
+import { UploadOutlined, EyeOutlined, DeleteOutlined, DownloadOutlined, ToolOutlined, AlignCenterOutlined } from '@ant-design/icons'
 import { requirementsAPI, testPointsAPI } from '../services/api'
 import dayjs, { Dayjs } from 'dayjs'
 import TestPointsModal from '../components/TestPointsModal'
@@ -216,9 +216,11 @@ export default function Requirements() {
   }
 
   const fileTypeOptions = [
-    { label: 'Word', value: 'word' },
-    { label: 'Excel', value: 'excel' },
+    { label: 'DOCX', value: 'docx' },
     { label: 'PDF', value: 'pdf' },
+    { label: 'TXT', value: 'txt' },
+    { label: 'XLS', value: 'xls' },
+    { label: 'XLSX', value: 'xlsx' },
   ]
 
   const statusOptions = [
@@ -233,23 +235,41 @@ export default function Requirements() {
       title: 'ID',
       dataIndex: 'id',
       key: 'id',
-      width: 80,
+      align: 'center' as const,
     },
     {
       title: '标题',
       dataIndex: 'title',
       key: 'title',
+      minWidth: 200,
+      align: 'center' as const,
     },
     {
       title: '文件名',
       dataIndex: 'file_name',
       key: 'file_name',
+      minWidth: 200,
+      align: 'center' as const,
     },
     {
       title: '文件类型',
       dataIndex: 'file_type',
       key: 'file_type',
-      render: (type: string) => <Tag>{type.toUpperCase()}</Tag>,
+      render: (type: string) => {
+        const typeMap: { [key: string]: { label: string; color: string } } = {
+          docx: { label: 'DOCX', color: 'blue' },
+          pdf: { label: 'PDF', color: 'red' },
+          txt: { label: 'TXT', color: 'green' },
+          xls: { label: 'XLS', color: 'orange' },
+          xlsx: { label: 'XLSX', color: 'orange' },
+          word: { label: 'Word', color: 'blue' },
+          excel: { label: 'Excel', color: 'orange' },
+        }
+        const config = typeMap[type?.toLowerCase()] || { label: type?.toUpperCase() || '未知', color: 'default' }
+        return <Tag color={config.color}>{config.label}</Tag>
+      },
+      minWidth: 100,
+      align: 'center' as const,
     },
     {
       title: '状态',
@@ -270,29 +290,38 @@ export default function Requirements() {
         }
         return <Tag color={colorMap[status]}>{textMap[status]}</Tag>
       },
+      minWidth: 80,
+      align: 'center' as const,
     },
     {
       title: '测试点',
       dataIndex: 'test_points_count',
       key: 'test_points_count',
+      minWidth: 80,
+      align: 'center' as const,
     },
     {
       title: '用例',
       dataIndex: 'test_cases_count',
       key: 'test_cases_count',
+      minWidth: 80,
+      align: 'center' as const,
     },
     {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
       render: (text: string) => dayjs(text).format('YYYY-MM-DD HH:mm'),
+      minWidth: 150,
+      align: 'center' as const,
     },
     {
       title: '操作',
       key: 'action',
-      width: 240,
+      minWidth: 200,
+      align: 'center' as const,
       render: (_: any, record: any) => (
-        <Space>
+        <Space size={2}>
           <Button
             type="link"
             icon={<EyeOutlined />}
@@ -516,7 +545,20 @@ export default function Requirements() {
                 </Button>
               </Descriptions.Item>
               <Descriptions.Item label="文件类型">
-                <Tag>{selectedRequirement.file_type?.toUpperCase()}</Tag>
+                {(() => {
+                  const type = selectedRequirement.file_type
+                  const typeMap: { [key: string]: { label: string; color: string } } = {
+                    docx: { label: 'DOCX', color: 'blue' },
+                    pdf: { label: 'PDF', color: 'red' },
+                    txt: { label: 'TXT', color: 'green' },
+                    xls: { label: 'XLS', color: 'orange' },
+                    xlsx: { label: 'XLSX', color: 'orange' },
+                    word: { label: 'Word', color: 'blue' },
+                    excel: { label: 'Excel', color: 'orange' },
+                  }
+                  const config = typeMap[type?.toLowerCase()] || { label: type?.toUpperCase() || '未知', color: 'default' }
+                  return <Tag color={config.color}>{config.label}</Tag>
+                })()}
               </Descriptions.Item>
               <Descriptions.Item label="文件大小">
                 {selectedRequirement.file_size
