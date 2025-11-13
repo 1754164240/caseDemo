@@ -69,9 +69,10 @@ def generate_test_cases_background(
             'title': test_point.title,
             'description': test_point.description,
             'category': test_point.category,
-            'priority': test_point.priority
+            'priority': test_point.priority,
+            'business_line': test_point.business_line  # 添加业务线字段
         }
-        
+
         # 使用 AI 生成测试用例
         ai_svc = get_ai_service(db)
         test_cases_data = ai_svc.generate_test_cases(test_point_data, context)
