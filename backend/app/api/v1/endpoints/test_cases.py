@@ -80,12 +80,19 @@ def generate_test_cases_background(
         # 保存测试用例
         for tc_data in test_cases_data:
             code = generate_test_case_code(db, test_point)
+
+            # 处理 preconditions: 如果是字典，转换为 JSON 字符串
+            preconditions = tc_data.get('preconditions', '')
+            if isinstance(preconditions, dict):
+                import json
+                preconditions = json.dumps(preconditions, ensure_ascii=False)
+
             test_case = TestCase(
                 test_point_id=test_point_id,
                 code=code,
                 title=tc_data.get('title', ''),
                 description=tc_data.get('description', ''),
-                preconditions=tc_data.get('preconditions', ''),
+                preconditions=preconditions,
                 test_steps=tc_data.get('test_steps', []),
                 expected_result=tc_data.get('expected_result', ''),
                 priority=tc_data.get('priority', 'medium'),
@@ -144,6 +151,9 @@ def read_test_cases(
             (TestCase.preconditions.ilike(search_pattern)) |
             (TestCase.expected_result.ilike(search_pattern))
         )
+
+    # 按创建时间倒序排序
+    query = query.order_by(TestCase.created_at.desc())
 
     test_cases = query.offset(skip).limit(limit).all()
     return test_cases
