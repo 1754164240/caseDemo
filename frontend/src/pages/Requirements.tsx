@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, ChangeEvent } from 'react'
 import { Table, Button, Upload, Modal, Form, Input, message, Tag, Space, Popconfirm, Descriptions, Drawer, Select, DatePicker } from 'antd'
-import { UploadOutlined, EyeOutlined, DeleteOutlined, ThunderboltOutlined, DownloadOutlined, ToolOutlined } from '@ant-design/icons'
+import { UploadOutlined, EyeOutlined, DeleteOutlined, DownloadOutlined, ToolOutlined } from '@ant-design/icons'
 import { requirementsAPI, testPointsAPI } from '../services/api'
 import dayjs, { Dayjs } from 'dayjs'
 import TestPointsModal from '../components/TestPointsModal'
@@ -167,29 +167,7 @@ export default function Requirements() {
     }
   }
 
-  const handleRegenerateTestPoints = async (record: any) => {
-    try {
-      setProcessingRequirementId(record.id)
-      message.loading({
-        content: '正在重新生成测试点...',
-        key: `requirement-${record.id}`,
-        duration: 0,
-      })
-      await testPointsAPI.regenerate(record.id)
-
-      // 更新需求状态为处理中
-      setTimeout(() => {
-        loadRequirements()
-      }, 1000)
-    } catch (error: any) {
-      setProcessingRequirementId(null)
-      message.error({
-        content: error.response?.data?.detail || '生成测试点失败',
-        key: `requirement-${record.id}`,
-      })
-    }
-  }
-
+  
   const handleDownload = async (requirementId: number, fileName: string) => {
     try {
       message.loading({ content: '正在下载...', key: 'download' })
@@ -325,27 +303,14 @@ export default function Requirements() {
           </Button>
           <Button
             type="link"
-            icon={<ToolOutlined />}
+            icon={<ToolOutlined style={{ color: '#52c41a' }} />}
             size="small"
             onClick={() => setTestPointsModalRequirement(record)}
+            style={{ color: '#52c41a' }}
           >
             测试点
           </Button>
-          <Popconfirm
-            title="确定重新生成测试点吗？这将删除现有的测试点。"
-            onConfirm={() => handleRegenerateTestPoints(record)}
-            okText="确定"
-            cancelText="取消"
-          >
-            <Button
-              type="link"
-              icon={<ThunderboltOutlined />}
-              size="small"
-            >
-              生成测试点
-            </Button>
-          </Popconfirm>
-          <Popconfirm
+            <Popconfirm
             title="确定删除此需求吗？"
             onConfirm={() => handleDelete(record.id)}
             okText="确定"
