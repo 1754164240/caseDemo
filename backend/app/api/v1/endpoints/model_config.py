@@ -71,18 +71,17 @@ def get_model_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser)
 ):
-    """获取单个模型配置详情(包含完整 API Key 用于编辑)"""
+    """获取单个模型配置详情(不返回 API Key)"""
     config = db.query(ModelConfigModel).filter(ModelConfigModel.id == config_id).first()
-    
+
     if not config:
         raise HTTPException(status_code=404, detail="模型配置不存在")
-    
+
     return {
         "id": config.id,
         "name": config.name,
         "display_name": config.display_name,
         "description": config.description,
-        "api_key": config.api_key,  # 返回完整 API Key 用于编辑
         "api_key_masked": mask_api_key(config.api_key),
         "api_base": config.api_base,
         "model_name": config.model_name,
@@ -201,12 +200,17 @@ def update_model_config(
     db_config = db.query(ModelConfigModel).filter(
         ModelConfigModel.id == config_id
     ).first()
-    
+
     if not db_config:
         raise HTTPException(status_code=404, detail="模型配置不存在")
-    
+
     # 更新字段
     update_data = config.model_dump(exclude_unset=True)
+
+    # 处理 api_key: 如果为空或 None,则不更新(保持原有值)
+    if 'api_key' in update_data:
+        if not update_data['api_key'] or (isinstance(update_data['api_key'], str) and not update_data['api_key'].strip()):
+            del update_data['api_key']
 
     # 处理 temperature: 如果为空字符串,使用默认值
     if 'temperature' in update_data:
