@@ -264,18 +264,19 @@ class AIService:
 请以JSON格式返回测试用例列表。"""
 
         # 根据业务线选择对应的 Prompt 配置键
-        if business_line == 'contract':
+        # 支持 'contract' 或 'contract-契约' 等格式
+        if business_line and ('contract' in business_line.lower() or '契约' in business_line):
             prompt_key = "CONTRACT_TEST_CASE_PROMPT"
-            print(f"[INFO] 使用契约业务线 Prompt 生成测试用例")
-        elif business_line == 'preservation':
+            print(f"[INFO] 使用契约业务线 Prompt 生成测试用例 (business_line={business_line})")
+        elif business_line and ('preservation' in business_line.lower() or '保全' in business_line):
             prompt_key = "PRESERVATION_TEST_CASE_PROMPT"
-            print(f"[INFO] 使用保全业务线 Prompt 生成测试用例")
-        elif business_line == 'claim':
+            print(f"[INFO] 使用保全业务线 Prompt 生成测试用例 (business_line={business_line})")
+        elif business_line and ('claim' in business_line.lower() or '理赔' in business_line):
             prompt_key = "CLAIM_TEST_CASE_PROMPT"
-            print(f"[INFO] 使用理赔业务线 Prompt 生成测试用例")
+            print(f"[INFO] 使用理赔业务线 Prompt 生成测试用例 (business_line={business_line})")
         else:
             prompt_key = "TEST_CASE_PROMPT"
-            print(f"[INFO] 使用默认 Prompt 生成测试用例")
+            print(f"[INFO] 使用默认 Prompt 生成测试用例 (business_line={business_line})")
 
         system_prompt = self._get_prompt_from_db(prompt_key, default_prompt)
 

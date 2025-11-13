@@ -34,11 +34,12 @@ DEFAULT_TEST_POINT_PROMPT = """你是一个专业的保险行业测试专家。�
 - description: 详细描述
 - category: 分类（功能/边界/异常/业务规则）
 - priority: 优先级（high/medium/low）
+- business_line: 业务线（contract-契约/preservation-保全/claim-理赔），根据需求内容判断属于哪个业务线
 
 返回格式示例：
 [
-  {{"title": "测试点1", "description": "描述1", "category": "功能", "priority": "high"}},
-  {{"title": "测试点2", "description": "描述2", "category": "边界", "priority": "medium"}}
+  {{"title": "测试点1", "description": "描述1", "category": "功能", "priority": "high", "business_line": "contract-契约"}},
+  {{"title": "测试点2", "description": "描述2", "category": "边界", "priority": "medium", "business_line": "preservation-保全"}}
 ]
 
 {feedback_instruction}"""

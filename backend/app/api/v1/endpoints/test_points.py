@@ -479,8 +479,8 @@ def read_test_points(
             (TestPoint.category.ilike(search_pattern))
         )
 
-    # 默认按编号排序，确保列表顺序稳定
-    query = query.order_by(TestPoint.code)
+    # 按创建时间倒序排序
+    query = query.order_by(TestPoint.created_at.desc())
 
     test_points = query.offset(skip).limit(limit).all()
 
