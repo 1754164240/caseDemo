@@ -9,8 +9,9 @@ class TestPointHistory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     test_point_id = Column(Integer, ForeignKey("test_points.id"), nullable=False, index=True)
-    requirement_id = Column(Integer, ForeignKey("requirements.id"), nullable=False)
-    version = Column(String(50), nullable=False)
+    requirement_id = Column(Integer, ForeignKey("requirements.id"), nullable=False, index=True)
+    version = Column(String(50), nullable=False, index=True)
+    code = Column(String(20))
     title = Column(String(200))
     description = Column(Text)
     category = Column(String(100))

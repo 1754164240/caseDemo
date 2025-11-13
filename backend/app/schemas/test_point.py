@@ -87,9 +87,14 @@ class TestPointWithCases(TestPoint):
 
 class TestPointHistoryEntry(BaseModel):
     id: int
+    test_point_id: int
     version: str
+    code: Optional[str] = None
     title: Optional[str] = None
     description: Optional[str] = None
+    category: Optional[str] = None
+    priority: Optional[str] = None
+    business_line: Optional[str] = None
     prompt_summary: Optional[str] = None
     status: str
     operator_id: Optional[int] = None
@@ -97,4 +102,12 @@ class TestPointHistoryEntry(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class RequirementHistoryVersion(BaseModel):
+    version: str
+    prompt_summary: Optional[str] = None
+    status: str = "pending"
+    created_at: datetime
+
 

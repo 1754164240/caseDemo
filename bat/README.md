@@ -1,254 +1,272 @@
-# 批处理脚本说明
+﻿# 鎵瑰鐞嗚剼鏈鏄?
 
-本文件夹包含项目的所有批处理脚本，用于简化开发和部署流程。
+鏈枃浠跺す鍖呭惈椤圭洰鐨勬墍鏈夋壒澶勭悊鑴氭湰锛岀敤浜庣畝鍖栧紑鍙戝拰閮ㄧ讲娴佺▼銆?
 
-## 📦 安装脚本
+## 馃摝 瀹夎鑴氭湰
 
 ### install-backend.bat
-**功能**: 安装后端 Python 依赖
+**鍔熻兘**: 瀹夎鍚庣 Python 渚濊禆
 
-**使用方法**:
+**浣跨敤鏂规硶**:
 ```bash
 bat\install-backend.bat
 ```
 
-**执行内容**:
-- 进入 backend 目录
-- 执行 `pip install -r requirements.txt`
-- 安装所有 Python 依赖包
+**鎵ц鍐呭**:
+- 杩涘叆 backend 鐩綍
+- 鎵ц `pip install -r requirements.txt`
+- 瀹夎鎵€鏈?Python 渚濊禆鍖?
 
 ---
 
 ### install-frontend.bat
-**功能**: 安装前端 Node.js 依赖
+**鍔熻兘**: 瀹夎鍓嶇 Node.js 渚濊禆
 
-**使用方法**:
+**浣跨敤鏂规硶**:
 ```bash
 bat\install-frontend.bat
 ```
 
-**执行内容**:
-- 进入 frontend 目录
-- 执行 `npm install`
-- 安装所有 Node.js 依赖包
+**鎵ц鍐呭**:
+- 杩涘叆 frontend 鐩綍
+- 鎵ц `npm install`
+- 瀹夎鎵€鏈?Node.js 渚濊禆鍖?
 
 ---
 
 ### install-missing-deps.bat
-**功能**: 安装缺失的依赖包
+**鍔熻兘**: 瀹夎缂哄け鐨勪緷璧栧寘
 
-**使用方法**:
+**浣跨敤鏂规硶**:
 ```bash
 bat\install-missing-deps.bat
 ```
 
-**执行内容**:
-- 检查并安装缺失的 Python 包
-- 修复依赖问题
+**鎵ц鍐呭**:
+- 妫€鏌ュ苟瀹夎缂哄け鐨?Python 鍖?
+- 淇渚濊禆闂
 
 ---
 
-## ▶️ 启动脚本
+## 鈻讹笍 鍚姩鑴氭湰
 
 ### start-backend.bat
-**功能**: 启动后端服务
+**鍔熻兘**: 鍚姩鍚庣鏈嶅姟
 
-**使用方法**:
+**浣跨敤鏂规硶**:
 ```bash
 bat\start-backend.bat
 ```
 
-**执行内容**:
-- 进入 backend 目录
-- 执行 `python main.py`
-- 启动 FastAPI 服务（http://localhost:8000）
+**鎵ц鍐呭**:
+- 杩涘叆 backend 鐩綍
+- 鎵ц `python main.py`
+- 鍚姩 FastAPI 鏈嶅姟锛坔ttp://localhost:8000锛?
 
 ---
 
 ### start-frontend.bat
-**功能**: 启动前端服务
+**鍔熻兘**: 鍚姩鍓嶇鏈嶅姟
 
-**使用方法**:
+**浣跨敤鏂规硶**:
 ```bash
 bat\start-frontend.bat
 ```
 
-**执行内容**:
-- 进入 frontend 目录
-- 执行 `npm run dev`
-- 启动 Vite 开发服务器（http://localhost:5173）
+**鎵ц鍐呭**:
+- 杩涘叆 frontend 鐩綍
+- 鎵ц `npm run dev`
+- 鍚姩 Vite 寮€鍙戞湇鍔″櫒锛坔ttp://localhost:5173锛?
 
 ---
 
-## 🔧 配置脚本
+## 馃敡 閰嶇疆鑴氭湰
 
 ### setup-env.bat
-**功能**: 配置环境变量
+**鍔熻兘**: 閰嶇疆鐜鍙橀噺
 
-**使用方法**:
+**浣跨敤鏂规硶**:
 ```bash
 bat\setup-env.bat
 ```
 
-**执行内容**:
-- 创建 `.env` 文件
-- 配置数据库连接
-- 配置 AI 模型参数
-- 配置 Milvus 连接
+**鎵ц鍐呭**:
+- 鍒涘缓 `.env` 鏂囦欢
+- 閰嶇疆鏁版嵁搴撹繛鎺?
+- 閰嶇疆 AI 妯″瀷鍙傛暟
+- 閰嶇疆 Milvus 杩炴帴
 
 ---
 
 ### create-system-config-table.bat
-**功能**: 创建系统配置表
+**鍔熻兘**: 鍒涘缓绯荤粺閰嶇疆琛?
 
-**使用方法**:
+**浣跨敤鏂规硶**:
 ```bash
 bat\create-system-config-table.bat
 ```
 
-**执行内容**:
-- 运行数据库迁移脚本
-- 创建 `system_config` 表
-- 用于存储系统配置信息
+**鎵ц鍐呭**:
+- 杩愯鏁版嵁搴撹縼绉昏剼鏈?
+- 鍒涘缓 `system_config` 琛?
+- 鐢ㄤ簬瀛樺偍绯荤粺閰嶇疆淇℃伅
 
 ---
 
-## 👤 用户管理脚本
-
-### create-test-user.bat
-**功能**: 创建测试用户
+### create-test-point-history-table.bat
+**功能**: 初始化 `test_point_histories` 表, 记录测试点版本历史
 
 **使用方法**:
+```bash
+bat\create-test-point-history-table.bat
+```
+
+**执行内容**:
+- 运行 `backend/run_test_point_history_migration.py`
+- 创建/更新 `test_point_histories` 表及索引
+- 确保版本历史功能可用
+
+---
+
+## 馃懁 鐢ㄦ埛绠＄悊鑴氭湰
+
+### create-test-user.bat
+**鍔熻兘**: 鍒涘缓娴嬭瘯鐢ㄦ埛
+
+**浣跨敤鏂规硶**:
 ```bash
 bat\create-test-user.bat
 ```
 
-**执行内容**:
-- 运行用户创建脚本
-- 创建测试账号
-- 用于开发和测试
+**鎵ц鍐呭**:
+- 杩愯鐢ㄦ埛鍒涘缓鑴氭湰
+- 鍒涘缓娴嬭瘯璐﹀彿
+- 鐢ㄤ簬寮€鍙戝拰娴嬭瘯
 
 ---
 
 ### set-superuser.bat
-**功能**: 设置超级管理员
+**鍔熻兘**: 璁剧疆瓒呯骇绠＄悊鍛?
 
-**使用方法**:
+**浣跨敤鏂规硶**:
 ```bash
 bat\set-superuser.bat
 ```
 
-**执行内容**:
-- 提示输入用户名
-- 将指定用户设置为超级管理员
-- 授予系统管理权限
+**鎵ц鍐呭**:
+- 鎻愮ず杈撳叆鐢ㄦ埛鍚?
+- 灏嗘寚瀹氱敤鎴疯缃负瓒呯骇绠＄悊鍛?
+- 鎺堜簣绯荤粺绠＄悊鏉冮檺
 
 ---
 
-## ✅ 检查脚本
+## 鉁?妫€鏌ヨ剼鏈?
 
 ### check-setup.bat
-**功能**: 检查环境配置
+**鍔熻兘**: 妫€鏌ョ幆澧冮厤缃?
 
-**使用方法**:
+**浣跨敤鏂规硶**:
 ```bash
 bat\check-setup.bat
 ```
 
-**执行内容**:
-- 检查 Python 版本
-- 检查 Node.js 版本
-- 检查 Docker 状态
-- 检查 .env 文件
-- 检查数据库容器
-- 检查依赖安装
+**鎵ц鍐呭**:
+- 妫€鏌?Python 鐗堟湰
+- 妫€鏌?Node.js 鐗堟湰
+- 妫€鏌?Docker 鐘舵€?
+- 妫€鏌?.env 鏂囦欢
+- 妫€鏌ユ暟鎹簱瀹瑰櫒
+- 妫€鏌ヤ緷璧栧畨瑁?
 
 ---
 
 ### test-document-processing.bat
-**功能**: 测试文档处理功能
+**鍔熻兘**: 娴嬭瘯鏂囨。澶勭悊鍔熻兘
 
-**使用方法**:
+**浣跨敤鏂规硶**:
 ```bash
 bat\test-document-processing.bat
 ```
 
-**执行内容**:
-- 运行文档解析测试
-- 测试 AI 服务
-- 验证功能正常
+**鎵ц鍐呭**:
+- 杩愯鏂囨。瑙ｆ瀽娴嬭瘯
+- 娴嬭瘯 AI 鏈嶅姟
+- 楠岃瘉鍔熻兘姝ｅ父
 
 ---
 
-## 🛠️ 修复脚本
+## 馃洜锔?淇鑴氭湰
 
 ### fix-backend.bat
-**功能**: 修复后端问题
+**鍔熻兘**: 淇鍚庣闂
 
-**使用方法**:
+**浣跨敤鏂规硶**:
 ```bash
 bat\fix-backend.bat
 ```
 
-**执行内容**:
-- 检查并修复环境配置
-- 修复依赖问题
-- 重新安装必要的包
+**鎵ц鍐呭**:
+- 妫€鏌ュ苟淇鐜閰嶇疆
+- 淇渚濊禆闂
+- 閲嶆柊瀹夎蹇呰鐨勫寘
 
 ---
 
-## 📝 使用建议
+## 馃摑 浣跨敤寤鸿
 
-### 首次安装流程
+### 棣栨瀹夎娴佺▼
 ```bash
-# 1. 安装后端依赖
+# 1. 瀹夎鍚庣渚濊禆
 bat\install-backend.bat
 
-# 2. 安装前端依赖
+# 2. 瀹夎鍓嶇渚濊禆
 bat\install-frontend.bat
 
-# 3. 配置环境变量
+# 3. 閰嶇疆鐜鍙橀噺
 bat\setup-env.bat
 
-# 4. 创建系统配置表
+# 4. 鍒涘缓绯荤粺閰嶇疆琛?
 bat\create-system-config-table.bat
 
-# 5. 创建测试用户
+# 5. 初始化测试点版本历史表
+bat\create-test-point-history-table.bat
+
+# 6. 鍒涘缓娴嬭瘯鐢ㄦ埛
 bat\create-test-user.bat
 
-# 6. 设置超级管理员
+# 7. 璁剧疆瓒呯骇绠＄悊鍛?
 bat\set-superuser.bat
 ```
 
-### 日常开发流程
+### 鏃ュ父寮€鍙戞祦绋?
 ```bash
-# 启动后端（终端1）
+# 鍚姩鍚庣锛堢粓绔?锛?
 bat\start-backend.bat
 
-# 启动前端（终端2）
+# 鍚姩鍓嶇锛堢粓绔?锛?
 bat\start-frontend.bat
 ```
 
-### 环境检查
+### 鐜妫€鏌?
 ```bash
-# 检查环境配置
+# 妫€鏌ョ幆澧冮厤缃?
 bat\check-setup.bat
 ```
 
 ---
 
-## ⚠️ 注意事项
+## 鈿狅笍 娉ㄦ剰浜嬮」
 
-1. **运行权限**: 某些脚本可能需要管理员权限
-2. **工作目录**: 所有脚本应从项目根目录运行
-3. **路径问题**: 使用 `bat\` 前缀调用脚本
-4. **依赖顺序**: 按照推荐顺序执行安装脚本
+1. **杩愯鏉冮檺**: 鏌愪簺鑴氭湰鍙兘闇€瑕佺鐞嗗憳鏉冮檺
+2. **宸ヤ綔鐩綍**: 鎵€鏈夎剼鏈簲浠庨」鐩牴鐩綍杩愯
+3. **璺緞闂**: 浣跨敤 `bat\` 鍓嶇紑璋冪敤鑴氭湰
+4. **渚濊禆椤哄簭**: 鎸夌収鎺ㄨ崘椤哄簭鎵ц瀹夎鑴氭湰
 
 ---
 
-## 🔗 相关文档
+## 馃敆 鐩稿叧鏂囨。
 
-- [快速启动指南](../doc/QUICK_START.md)
-- [详细安装指南](../doc/README_SETUP.md)
-- [问题排查指南](../doc/TROUBLESHOOTING.md)
+- [蹇€熷惎鍔ㄦ寚鍗梋(../doc/QUICK_START.md)
+- [璇︾粏瀹夎鎸囧崡](../doc/README_SETUP.md)
+- [闂鎺掓煡鎸囧崡](../doc/TROUBLESHOOTING.md)
 

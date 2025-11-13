@@ -22,12 +22,22 @@ interface TestPointItem {
   approval_status?: string
 }
 
-interface HistoryEntry {
-  id: number
+interface HistoryVersion {
   version: string
   prompt_summary?: string
   status: string
   created_at: string
+}
+
+interface HistorySnapshotItem {
+  id: number
+  test_point_id: number
+  code?: string
+  title?: string
+  description?: string
+  category?: string
+  priority?: string
+  business_line?: string
 }
 
 const BUSINESS_LINE_OPTIONS = [
@@ -51,8 +61,10 @@ export default function TestPointsModal({
 }: TestPointsModalProps) {
   const [tableLoading, setTableLoading] = useState(false)
   const [testPoints, setTestPoints] = useState<TestPointItem[]>([])
-  const [activePoint, setActivePoint] = useState<TestPointItem | null>(null)
-  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [historyVersions, setHistoryVersions] = useState<HistoryVersion[]>([])
+  const [selectedVersion, setSelectedVersion] = useState<string | null>(null)
+  const [historySnapshots, setHistorySnapshots] = useState<Record<string, TestPointItem[]>>({})
+  const [snapshotLoading, setSnapshotLoading] = useState(false)
   const [optimizing, setOptimizing] = useState(false)
   const [editedRows, setEditedRows] = useState<Record<number, Partial<TestPointItem>>>({})
   const [savingChanges, setSavingChanges] = useState(false)
@@ -62,6 +74,54 @@ export default function TestPointsModal({
   const latestSnapshotRef = useRef<TestPointItem[]>([])
 
   const [promptForm] = Form.useForm()
+
+  const refreshHistoryVersions = useCallback(async (options?: { forceLatest?: boolean }) => {
+    if (!requirement) {
+      setHistoryVersions([])
+      setSelectedVersion(null)
+      setHistorySnapshots({})
+      return
+    }
+    try {
+      const response = await testPointsAPI.historyVersions(requirement.id)
+      const versions: HistoryVersion[] = response.data || []
+      setHistoryVersions(versions)
+      setHistorySnapshots((prev) => {
+        const next = { ...prev }
+        const validVersions = new Set(versions.map((item) => item.version))
+        Object.keys(next).forEach((key) => {
+          if (!validVersions.has(key)) {
+            delete next[key]
+          }
+        })
+        return next
+      })
+      setSelectedVersion((prev) => {
+        if (options?.forceLatest) {
+          return versions[0]?.version || null
+        }
+        if (prev && versions.some((item) => item.version === prev)) {
+          return prev
+        }
+        return versions[0]?.version || null
+      })
+    } catch {
+      setHistoryVersions([])
+      setSelectedVersion(null)
+      setHistorySnapshots({})
+    }
+  }, [requirement])
+
+  const latestVersion = historyVersions[0]?.version || null
+  const selectedHistoryVersion = selectedVersion || latestVersion
+  const isLatestHistorySelected = !selectedHistoryVersion || selectedHistoryVersion === latestVersion
+  const displayTestPoints = useMemo(() => {
+    if (!isLatestHistorySelected && selectedHistoryVersion) {
+      return historySnapshots[selectedHistoryVersion] || []
+    }
+    return testPoints
+  }, [historySnapshots, isLatestHistorySelected, selectedHistoryVersion, testPoints])
+  const editingDisabled = !isLatestHistorySelected
 
   const syncSnapshots = (list: TestPointItem[], resetEdits: boolean) => {
     latestSnapshotRef.current = list.map((item) => ({ ...item }))
@@ -85,7 +145,7 @@ export default function TestPointsModal({
     onProcessingEnd?.()
   }
 
-  const loadTestPoints = async (options?: { keepOptimizing?: boolean }) => {
+  const loadTestPoints = async (options?: { keepOptimizing?: boolean; forceSelectLatest?: boolean }) => {
     if (!requirement) return
     const shouldShowTableLoading = !options?.keepOptimizing
     if (shouldShowTableLoading) {
@@ -101,10 +161,6 @@ export default function TestPointsModal({
       setTestPoints(fetchedData)
       testPointsSnapshotRef.current = nextSnapshot
       syncSnapshots(fetchedData, !options?.keepOptimizing)
-      setActivePoint((prev) => {
-        if (!prev) return fetchedData[0] || null
-        return fetchedData.find((tp: TestPointItem) => tp.id === prev.id) || fetchedData[0] || null
-      })
     } catch (error) {
       message.error('加载测试点失败')
     } finally {
@@ -122,6 +178,7 @@ export default function TestPointsModal({
       }
       setOptimizing(false)
       setAwaitingRegenResult(false)
+      refreshHistoryVersions({ forceLatest: options?.forceSelectLatest })
     }
   }
 
@@ -131,8 +188,9 @@ export default function TestPointsModal({
     } else {
       setTestPoints([])
       testPointsSnapshotRef.current = '[]'
-      setActivePoint(null)
-      setHistory([])
+      setHistoryVersions([])
+      setSelectedVersion(null)
+      setHistorySnapshots({})
       setEditedRows({})
       setAwaitingRegenResult(false)
       originalTestPointsRef.current = {}
@@ -146,7 +204,7 @@ export default function TestPointsModal({
     const handler = (event: Event) => {
       const reqId = (event as CustomEvent<number | undefined>).detail
       if (reqId === requirement.id) {
-        loadTestPoints().then(() => finalizeOptimization())
+        loadTestPoints({ forceSelectLatest: true }).then(() => finalizeOptimization())
       }
     }
     window.addEventListener('test-points-updated', handler)
@@ -171,19 +229,54 @@ export default function TestPointsModal({
   }, [optimizing, requirement])
 
   useEffect(() => {
-    if (!activePoint) {
-      setHistory([])
+    refreshHistoryVersions()
+  }, [refreshHistoryVersions])
+
+  useEffect(() => {
+    if (!requirement || !selectedHistoryVersion || isLatestHistorySelected) {
       return
     }
-    ;(async () => {
-      try {
-        const response = await testPointsAPI.history(activePoint.id)
-        setHistory(response.data || [])
-      } catch {
-        setHistory([])
-      }
-    })()
-  }, [activePoint])
+    if (historySnapshots[selectedHistoryVersion]) {
+      return
+    }
+    let cancelled = false
+    setSnapshotLoading(true)
+    testPointsAPI
+      .historySnapshot(requirement.id, selectedHistoryVersion)
+      .then((response) => {
+        if (cancelled) return
+        const rows: TestPointItem[] = (response.data || []).map((item: any) => {
+          const baseline = latestSnapshotRef.current.find((tp) => tp.id === item.test_point_id)
+          return {
+            ...(baseline || {}),
+            id: item.test_point_id,
+            code: item.code ?? baseline?.code ?? '',
+            title: item.title ?? baseline?.title ?? '',
+            description: item.description ?? baseline?.description ?? '',
+            category: item.category ?? baseline?.category ?? '',
+            priority: item.priority ?? baseline?.priority ?? 'medium',
+            business_line: item.business_line ?? baseline?.business_line ?? undefined,
+          }
+        })
+        setHistorySnapshots((prev) => ({
+          ...prev,
+          [selectedHistoryVersion]: rows,
+        }))
+      })
+      .catch(() => {
+        if (!cancelled) {
+          message.warning('加载历史版本失败')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSnapshotLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [historySnapshots, isLatestHistorySelected, requirement, selectedHistoryVersion])
 
   const submitRegenerate = async (force = false) => {
     if (!requirement) {
@@ -231,6 +324,7 @@ export default function TestPointsModal({
 
   const handleFieldChange = useCallback(
     (id: number, field: EditableField, value: TestPointItem[EditableField]) => {
+      if (editingDisabled) return
       setTestPoints((prev) =>
         prev.map((tp) => (tp.id === id ? { ...tp, [field]: value as any } : tp))
       )
@@ -254,18 +348,19 @@ export default function TestPointsModal({
         return next
       })
     },
-    []
+    [editingDisabled]
   )
 
   const hasPendingEdits = Object.keys(editedRows).length > 0
 
   const handleResetEdits = () => {
+    if (editingDisabled) return
     setTestPoints(latestSnapshotRef.current.map((item) => ({ ...item })))
     setEditedRows({})
   }
 
   const handleSaveChanges = async () => {
-    if (!requirement || !hasPendingEdits) return
+    if (!requirement || !hasPendingEdits || editingDisabled) return
     setSavingChanges(true)
 
     // 保存当前编辑数据，避免清空后无法使用
@@ -326,6 +421,7 @@ export default function TestPointsModal({
           <Input
             size="small"
             value={record.title || ''}
+            disabled={editingDisabled}
             onChange={(e) => handleFieldChange(record.id, 'title', e.target.value)}
           />
         ),
@@ -340,6 +436,7 @@ export default function TestPointsModal({
             value={record.description || ''}
             autoSize={{ minRows: 1, maxRows: 2 }}
             style={{ resize: 'none' }}
+            disabled={editingDisabled}
             onChange={(e) => handleFieldChange(record.id, 'description', e.target.value)}
           />
         ),
@@ -353,6 +450,7 @@ export default function TestPointsModal({
           <Input
             size="small"
             value={record.category || ''}
+            disabled={editingDisabled}
             onChange={(e) => handleFieldChange(record.id, 'category', e.target.value)}
           />
         ),
@@ -369,6 +467,7 @@ export default function TestPointsModal({
             options={businessLineOptions}
             placeholder="请选择"
             value={record.business_line || undefined}
+            disabled={editingDisabled}
             onChange={(value) => handleFieldChange(record.id, 'business_line', value || undefined)}
             style={{ width: '100%' }}
           />
@@ -385,13 +484,14 @@ export default function TestPointsModal({
             options={priorityOptions}
             placeholder="请选择"
             value={record.priority || undefined}
+            disabled={editingDisabled}
             onChange={(value) => handleFieldChange(record.id, 'priority', value || undefined)}
             style={{ width: '100%' }}
           />
         ),
       },
     ],
-    [businessLineOptions, handleFieldChange, priorityOptions]
+    [businessLineOptions, handleFieldChange, priorityOptions, editingDisabled]
   )
 
   return (
@@ -424,19 +524,23 @@ export default function TestPointsModal({
                 marginBottom: 8,
               }}
             >
-              <div style={{ color: hasPendingEdits ? '#fa8c16' : '#999', fontSize: 12 }}>
-                {hasPendingEdits
-                  ? `已修改 ${Object.keys(editedRows).length} 条，点击“保存修改”生效`
-                  : '点击表格单元格即可行内编辑'}
+              <div style={{ color: editingDisabled ? '#999' : hasPendingEdits ? '#fa8c16' : '#999', fontSize: 12 }}>
+                {editingDisabled
+                  ? selectedHistoryVersion
+                    ? `当前查看历史版本 ${selectedHistoryVersion}，仅支持查看`
+                    : '无可用版本'
+                  : hasPendingEdits
+                    ? `已修改 ${Object.keys(editedRows).length} 条，点击“保存修改”生效`
+                    : '点击表格单元格即可行内编辑'}
               </div>
               <Space>
-                <Button onClick={handleResetEdits} disabled={!hasPendingEdits}>
+                <Button onClick={handleResetEdits} disabled={!hasPendingEdits || editingDisabled}>
                   撤销修改
                 </Button>
                 <Button
                   type="primary"
                   onClick={handleSaveChanges}
-                  disabled={!hasPendingEdits}
+                  disabled={!hasPendingEdits || editingDisabled}
                   loading={savingChanges}
                 >
                   保存修改
@@ -446,15 +550,12 @@ export default function TestPointsModal({
             <div style={{ flex: 1, height: '100%', overflow: 'hidden' }}>
               <Table
                 rowKey="id"
-                dataSource={testPoints}
+                dataSource={displayTestPoints}
                 columns={columns}
-                loading={tableLoading}
+                loading={editingDisabled ? snapshotLoading : tableLoading}
                 size="small"
                 pagination={false}
                 scroll={{ x: 'max-content', y: 'calc(70vh - 100px)' }}
-                onRow={(record) => ({
-                  onClick: () => setActivePoint(record),
-                })}
                 style={{ height: '100%' }}
                 tableLayout="fixed"
               />
@@ -472,17 +573,23 @@ export default function TestPointsModal({
                 </Button>
               </Form>
             </div>
-
-
             <div style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 16, flex: 1, overflowY: 'auto' }}>
               <h4 style={{ marginBottom: 12 }}>版本历史</h4>
-              {activePoint && history.length ? (
+              {requirement && historyVersions.length ? (
                 <Timeline
-                  items={history.map((item) => ({
-                    color: item.status === 'approved' ? 'green' : 'blue',
+                  items={historyVersions.map((item) => ({
+                    color: item.version === selectedHistoryVersion ? 'green' : 'blue',
                     children: (
-                      <div>
-                        <strong>{item.version}</strong> - {item.status}
+                      <div
+                        onClick={() => setSelectedVersion(item.version)}
+                        style={{
+                          cursor: 'pointer',
+                          padding: 8,
+                          borderRadius: 6,
+                          background: item.version === selectedHistoryVersion ? '#f0f5ff' : undefined,
+                        }}
+                      >
+                        <strong>{item.version}</strong> - {item.status === 'completed' ? '最新生成' : item.status}
                         <div style={{ color: '#666' }}>{item.prompt_summary || '暂无提示词摘要'}</div>
                         <div style={{ fontSize: 12 }}>{new Date(item.created_at).toLocaleString()}</div>
                       </div>
@@ -490,7 +597,7 @@ export default function TestPointsModal({
                   }))}
                 />
               ) : (
-                <Empty description={activePoint ? '暂无历史' : '请选择测试点'} />
+                <Empty description={requirement ? '暂无历史' : '请选择需求'} />
               )}
             </div>
           </div>

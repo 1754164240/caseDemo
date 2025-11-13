@@ -223,6 +223,10 @@ export const testPointsAPI = {
     params?: { feedback?: string; force?: boolean }
   ) => api.post(`/test-points/regenerate/${requirementId}`, null, { params: params || {} }),
   history: (id: number) => api.get(`/test-points/${id}/history`),
+  historyVersions: (requirementId: number) =>
+    api.get(`/test-points/history/requirements/${requirementId}`),
+  historySnapshot: (requirementId: number, version: string) =>
+    api.get(`/test-points/history/requirements/${requirementId}/${encodeURIComponent(version)}`),
   bulkUpdate: (data: {
     requirement_id: number
     updates: Array<{
@@ -238,6 +242,10 @@ export const testPointsAPI = {
   approve: (id: number, data: { approval_status: string; approval_comment?: string }) =>
     api.post(`/test-points/${id}/approve`, data),
   resetApproval: (id: number) => api.post(`/test-points/${id}/reset-approval`),
+  historyVersionsByRequirement: (requirementId: number) =>
+    api.get(`/test-points/history/requirements/${requirementId}`),
+  historySnapshotByRequirement: (requirementId: number, version: string) =>
+    api.get(`/test-points/history/requirements/${requirementId}/${version}`),
 }
 
 export const testCasesAPI = {

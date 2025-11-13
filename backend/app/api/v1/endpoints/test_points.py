@@ -20,6 +20,7 @@ from app.schemas.test_point import (
     TestPointOptimizeRequest,
     TestPointHistoryEntry,
     TestPointBulkUpdateRequest,
+    RequirementHistoryVersion,
 )
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
@@ -98,24 +99,37 @@ def _ensure_regeneration_allowed(db: Session, requirement_id: int, force: bool) 
         )
 
 
+def _allocate_requirement_version(db: Session, requirement_id: int) -> str:
+    latest_version = (
+        db.query(func.max(TestPointHistory.version))
+        .filter(TestPointHistory.requirement_id == requirement_id)
+        .scalar()
+    )
+    if not latest_version:
+        return "v001"
+    digits = "".join(ch for ch in latest_version if ch.isdigit())
+    try:
+        next_index = int(digits) + 1
+    except (TypeError, ValueError):
+        next_index = 1
+    return f"v{next_index:03d}"
+
+
 def _record_history_entry(
     db: Session,
     test_point: TestPoint,
     prompt_summary: str,
     operator_id: Optional[int],
     status: str = "pending",
+    version_label: Optional[str] = None,
 ) -> None:
-    version_count = (
-        db.query(func.count(TestPointHistory.id))
-        .filter(TestPointHistory.test_point_id == test_point.id)
-        .scalar()
-        or 0
-    )
-    version_label = f"v{version_count + 1:03d}"
+    if version_label is None:
+        version_label = _allocate_requirement_version(db, test_point.requirement_id)
     history = TestPointHistory(
         test_point_id=test_point.id,
         requirement_id=test_point.requirement_id,
         version=version_label,
+        code=test_point.code,
         title=test_point.title,
         description=test_point.description,
         category=test_point.category,
@@ -255,10 +269,53 @@ def regenerate_test_points_background(
             next_code_num += 1
             return f"TP-{next_code_num:03d}"
 
-        new_test_points: List[TestPoint] = []
-        for tp_data in test_points_data:
-            new_test_points.append(
-                TestPoint(
+        summary_text = user_feedback.strip() if user_feedback and user_feedback.strip() else "自动生成（未填写提示词）"
+        version_label = _allocate_requirement_version(db, requirement_id)
+
+        existing_points: List[TestPoint] = (
+            db.query(TestPoint)
+            .filter(TestPoint.requirement_id == requirement_id)
+            .order_by(TestPoint.id)
+            .all()
+        )
+        existing_point_ids = [tp.id for tp in existing_points]
+
+        if existing_point_ids:
+            db.query(TestCase).filter(TestCase.test_point_id.in_(existing_point_ids)).delete(
+                synchronize_session=False
+            )
+
+        def apply_data_to_point(tp: TestPoint, tp_data: Dict[str, str]) -> None:
+            tp.title = tp_data.get('title', '') or ''
+            tp.description = tp_data.get('description', '') or ''
+            tp.category = tp_data.get('category') or ''
+            tp.priority = tp_data.get('priority') or 'medium'
+            tp.business_line = tp_data.get('business_line') or ''
+            tp.user_feedback = summary_text
+            tp.approval_status = "pending"
+            tp.is_approved = False
+            tp.approved_by = None
+            tp.approved_at = None
+            tp.approval_comment = None
+            db.flush()
+            _record_history_entry(
+                db,
+                tp,
+                summary_text,
+                operator_id=user_id,
+                status="completed",
+                version_label=version_label,
+            )
+
+        # Update existing points in place to preserve history/ID chain
+        overlap_count = min(len(existing_points), len(test_points_data))
+        for idx in range(overlap_count):
+            apply_data_to_point(existing_points[idx], test_points_data[idx])
+
+        # Add new points if AI returned more rows than currently stored
+        if len(test_points_data) > overlap_count:
+            for tp_data in test_points_data[overlap_count:]:
+                new_tp = TestPoint(
                     requirement_id=requirement_id,
                     code=allocate_code(),
                     title=tp_data.get('title', ''),
@@ -266,24 +323,31 @@ def regenerate_test_points_background(
                     category=tp_data.get('category', ''),
                     priority=tp_data.get('priority', 'medium'),
                     business_line=tp_data.get('business_line', ''),
-                    user_feedback=user_feedback,
+                    user_feedback=summary_text,
+                    approval_status="pending",
+                    is_approved=False,
                 )
-            )
+                db.add(new_tp)
+                db.flush()
+                _record_history_entry(
+                    db,
+                    new_tp,
+                    summary_text,
+                    operator_id=user_id,
+                    status="completed",
+                    version_label=version_label,
+                )
 
-        existing_point_ids = [
-            tp.id
-            for tp in db.query(TestPoint.id).filter(TestPoint.requirement_id == requirement_id).all()
-        ]
-        if existing_point_ids:
-            db.query(TestCase).filter(TestCase.test_point_id.in_(existing_point_ids)).delete(
-                synchronize_session=False
-            )
-            db.query(TestPointHistory).filter(TestPointHistory.test_point_id.in_(existing_point_ids)).delete(
-                synchronize_session=False
-            )
-            db.query(TestPoint).filter(TestPoint.id.in_(existing_point_ids)).delete(synchronize_session=False)
-
-        db.add_all(new_test_points)
+        # Remove extra points if we previously had more than the regenerated result
+        if len(existing_points) > overlap_count:
+            extra_points = existing_points[overlap_count:]
+            extra_ids = [tp.id for tp in extra_points]
+            if extra_ids:
+                db.query(TestPointHistory).filter(TestPointHistory.test_point_id.in_(extra_ids)).delete(
+                    synchronize_session=False
+                )
+            for tp in extra_points:
+                db.delete(tp)
 
         requirement.status = RequirementStatus.COMPLETED
         db.commit()
@@ -319,6 +383,7 @@ def _apply_candidate_to_point(
     payload: TestPointOptimizeRequest,
     per_prompt: Optional[str],
     operator_id: Optional[int],
+    version_label: str,
 ) -> None:
     test_point.title = candidate.get("title") or test_point.title
     test_point.description = (
@@ -340,7 +405,14 @@ def _apply_candidate_to_point(
     )
     test_point.user_feedback = prompt_summary
     db.flush()
-    _record_history_entry(db, test_point, prompt_summary, operator_id, status="pending")
+    _record_history_entry(
+        db,
+        test_point,
+        prompt_summary,
+        operator_id,
+        status="pending",
+        version_label=version_label,
+    )
 
 
 def optimize_test_points_background(
@@ -372,6 +444,7 @@ def optimize_test_points_background(
 
         requirement.status = RequirementStatus.PROCESSING
         db.commit()
+        version_label = _allocate_requirement_version(db, requirement.id)
 
         try:
             requirement_text = DocumentParser.parse(
@@ -401,7 +474,9 @@ def optimize_test_points_background(
                 if not candidate:
                     continue
                 per_prompt = payload.per_point_prompts.get(tp.id)
-                _apply_candidate_to_point(db, tp, candidate, payload, per_prompt, user_id)
+                _apply_candidate_to_point(
+                    db, tp, candidate, payload, per_prompt, user_id, version_label
+                )
                 updated_ids.append(tp.id)
         else:
             for tp in points:
@@ -421,7 +496,9 @@ def optimize_test_points_background(
                 if not results:
                     continue
                 candidate = results[0]
-                _apply_candidate_to_point(db, tp, candidate, payload, per_prompt, user_id)
+                _apply_candidate_to_point(
+                    db, tp, candidate, payload, per_prompt, user_id, version_label
+                )
                 updated_ids.append(tp.id)
 
         requirement.status = RequirementStatus.COMPLETED
@@ -734,6 +811,75 @@ def bulk_update_test_points(
 
     db.commit()
     return {"updated": updated}
+
+
+@router.get("/history/requirements/{requirement_id}", response_model=List[RequirementHistoryVersion])
+def get_requirement_history_versions(
+    requirement_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    requirement = (
+        db.query(Requirement)
+        .filter(Requirement.id == requirement_id, Requirement.user_id == current_user.id)
+        .first()
+    )
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    rows = (
+        db.query(
+            TestPointHistory.version.label("version"),
+            func.min(TestPointHistory.created_at).label("created_at"),
+            func.max(TestPointHistory.prompt_summary).label("prompt_summary"),
+            func.max(TestPointHistory.status).label("status"),
+        )
+        .filter(TestPointHistory.requirement_id == requirement_id)
+        .group_by(TestPointHistory.version)
+        .order_by(func.min(TestPointHistory.created_at).desc())
+        .all()
+    )
+
+    return [
+        RequirementHistoryVersion(
+            version=row.version,
+            prompt_summary=row.prompt_summary,
+            status=row.status or "pending",
+            created_at=row.created_at,
+        )
+        for row in rows
+        if row.version
+    ]
+
+
+@router.get(
+    "/history/requirements/{requirement_id}/{version}",
+    response_model=List[TestPointHistoryEntry],
+)
+def get_requirement_history_snapshot(
+    requirement_id: int,
+    version: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    requirement = (
+        db.query(Requirement)
+        .filter(Requirement.id == requirement_id, Requirement.user_id == current_user.id)
+        .first()
+    )
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    histories = (
+        db.query(TestPointHistory)
+        .filter(
+            TestPointHistory.requirement_id == requirement_id,
+            TestPointHistory.version == version,
+        )
+        .order_by(TestPointHistory.test_point_id)
+        .all()
+    )
+    return histories
 
 
 @router.get("/{test_point_id}/history", response_model=List[TestPointHistoryEntry])
