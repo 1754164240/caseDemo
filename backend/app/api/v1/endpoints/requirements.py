@@ -20,6 +20,10 @@ from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.models.test_point import TestPoint
 from app.services.milvus_service import milvus_service
+from app.services.test_point_history_service import (
+    allocate_requirement_version,
+    record_history_entry,
+)
 from sqlalchemy import func, or_
 
 router = APIRouter()
@@ -38,16 +42,20 @@ def _run_async_notification(loop: Optional[asyncio.AbstractEventLoop], coro, des
 
 def generate_test_point_code(db: Session) -> str:
     """生成测试点编号"""
-    # 获取当前最大编号
-    max_code = db.query(func.max(TestPoint.code)).scalar()
+    max_code = (
+        db.query(TestPoint.code)
+        .order_by(func.length(TestPoint.code).desc(), TestPoint.code.desc())
+        .limit(1)
+        .scalar()
+    )
     if max_code:
-        # 提取数字部分并加1
         try:
-            num = int(max_code.split('-')[1])
-            return f"TP-{num + 1:03d}"
-        except:
-            pass
-    # 如果没有现有编号或解析失败，从 001 开始
+            current = int(max_code.split('-')[-1])
+        except (ValueError, AttributeError, IndexError):
+            digits = ''.join(ch for ch in max_code if ch.isdigit())
+            current = int(digits) if digits else 0
+        return f"TP-{current + 1:03d}"
+    # 如果没有现有编号，从 001 开始
     return "TP-001"
 
 
@@ -173,6 +181,9 @@ def process_requirement_background(
                 raise RuntimeError(f"AI 提取测试点失败: {ai_error}") from ai_error
             print(f"[INFO] AI 提取完成，测试点数量: {len(test_points_data)}")
 
+        summary_text = "自动生成（需求上传）"
+        version_label = allocate_requirement_version(db, requirement_id)
+
         # 保存测试点
         for tp_data in test_points_data:
             code = generate_test_point_code(db)
@@ -187,6 +198,14 @@ def process_requirement_background(
             )
             db.add(test_point)
             db.flush()  # 确保编号被保存，以便下一个测试点能获取正确的编号
+            record_history_entry(
+                db,
+                test_point,
+                summary_text,
+                operator_id=user_id,
+                status="completed",
+                version_label=version_label,
+            )
 
         db.commit()
         print(f"[INFO] 测试点保存成功")
@@ -471,4 +490,3 @@ def delete_requirement(
     db.commit()
 
     return {"message": "Requirement deleted successfully"}
-

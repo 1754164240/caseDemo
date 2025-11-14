@@ -26,6 +26,10 @@ from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.services.document_parser import DocumentParser
 from app.services.document_embedding_service import document_embedding_service
+from app.services.test_point_history_service import (
+    allocate_requirement_version,
+    record_history_entry,
+)
 from app.core.config import settings
 
 router = APIRouter()
@@ -44,15 +48,15 @@ def _run_async_notification(loop: Optional[asyncio.AbstractEventLoop], coro, des
 
 def generate_test_point_code(db: Session) -> str:
     """生成测试点编号"""
-    # 获取当前最大编号
-    max_code = db.query(func.max(TestPoint.code)).scalar()
+    max_code = (
+        db.query(TestPoint.code)
+        .order_by(func.length(TestPoint.code).desc(), TestPoint.code.desc())
+        .limit(1)
+        .scalar()
+    )
     if max_code:
-        # 提取数字部分并加1
-        try:
-            num = int(max_code.split('-')[1])
-            return f"TP-{num + 1:03d}"
-        except:
-            pass
+        current = _extract_code_number(max_code)
+        return f"TP-{current + 1:03d}"
     # 如果没有现有编号或解析失败，从 001 开始
     return "TP-001"
 
@@ -97,49 +101,6 @@ def _ensure_regeneration_allowed(db: Session, requirement_id: int, force: bool) 
                 ),
             },
         )
-
-
-def _allocate_requirement_version(db: Session, requirement_id: int) -> str:
-    latest_version = (
-        db.query(func.max(TestPointHistory.version))
-        .filter(TestPointHistory.requirement_id == requirement_id)
-        .scalar()
-    )
-    if not latest_version:
-        return "v001"
-    digits = "".join(ch for ch in latest_version if ch.isdigit())
-    try:
-        next_index = int(digits) + 1
-    except (TypeError, ValueError):
-        next_index = 1
-    return f"v{next_index:03d}"
-
-
-def _record_history_entry(
-    db: Session,
-    test_point: TestPoint,
-    prompt_summary: str,
-    operator_id: Optional[int],
-    status: str = "pending",
-    version_label: Optional[str] = None,
-) -> None:
-    if version_label is None:
-        version_label = _allocate_requirement_version(db, test_point.requirement_id)
-    history = TestPointHistory(
-        test_point_id=test_point.id,
-        requirement_id=test_point.requirement_id,
-        version=version_label,
-        code=test_point.code,
-        title=test_point.title,
-        description=test_point.description,
-        category=test_point.category,
-        priority=test_point.priority,
-        business_line=test_point.business_line,
-        prompt_summary=prompt_summary,
-        status=status,
-        operator_id=operator_id,
-    )
-    db.add(history)
 
 
 def _build_prompt_summary(
@@ -270,7 +231,7 @@ def regenerate_test_points_background(
             return f"TP-{next_code_num:03d}"
 
         summary_text = user_feedback.strip() if user_feedback and user_feedback.strip() else "自动生成（未填写提示词）"
-        version_label = _allocate_requirement_version(db, requirement_id)
+        version_label = allocate_requirement_version(db, requirement_id)
 
         existing_points: List[TestPoint] = (
             db.query(TestPoint)
@@ -298,7 +259,7 @@ def regenerate_test_points_background(
             tp.approved_at = None
             tp.approval_comment = None
             db.flush()
-            _record_history_entry(
+            record_history_entry(
                 db,
                 tp,
                 summary_text,
@@ -329,7 +290,7 @@ def regenerate_test_points_background(
                 )
                 db.add(new_tp)
                 db.flush()
-                _record_history_entry(
+                record_history_entry(
                     db,
                     new_tp,
                     summary_text,
@@ -417,7 +378,7 @@ def _apply_candidate_to_point(
     )
     test_point.user_feedback = prompt_summary
     db.flush()
-    _record_history_entry(
+    record_history_entry(
         db,
         test_point,
         prompt_summary,
@@ -456,7 +417,7 @@ def optimize_test_points_background(
 
         requirement.status = RequirementStatus.PROCESSING
         db.commit()
-        version_label = _allocate_requirement_version(db, requirement.id)
+        version_label = allocate_requirement_version(db, requirement.id)
 
         try:
             requirement_text = DocumentParser.parse(
