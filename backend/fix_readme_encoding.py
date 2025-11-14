@@ -1,4 +1,10 @@
-# 智能测试用例平台（保险行业）
+"""
+修复 readme.md 文件的编码问题
+"""
+import os
+
+# README 内容
+readme_content = """# 智能测试用例平台（保险行业）
 
 ## 平台简介
 
@@ -57,19 +63,19 @@
 docker-compose up -d
 
 # 2. 安装后端依赖（Windows）
-bat\install-backend.bat
+bat\\install-backend.bat
 
 # 3. 配置环境变量
 # 复制 backend/.env.example 为 backend/.env 并配置
 
 # 4. 启动后端服务（Windows）
-bat\start-backend.bat
+bat\\start-backend.bat
 
 # 5. 安装前端依赖（Windows）
-bat\install-frontend.bat
+bat\\install-frontend.bat
 
 # 6. 启动前端服务（Windows）
-bat\start-frontend.bat
+bat\\start-frontend.bat
 ```
 
 访问 http://localhost:5173 开始使用！
@@ -110,3 +116,21 @@ bat\start-frontend.bat
 ## 许可证
 
 MIT License
+"""
+
+# 写入文件
+readme_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'readme.md')
+
+# 删除旧文件
+if os.path.exists(readme_path):
+    os.remove(readme_path)
+    print(f"✅ 已删除旧文件: {readme_path}")
+
+# 写入新文件（UTF-8 编码，无 BOM）
+with open(readme_path, 'w', encoding='utf-8') as f:
+    f.write(readme_content)
+
+print(f"✅ 已创建新文件: {readme_path}")
+print("✅ 文件编码: UTF-8 (无 BOM)")
+print("✅ 中文显示正常")
+
