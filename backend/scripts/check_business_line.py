@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 # 添加项目根目录到 Python 路径
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import create_engine, text
 from app.core.config import settings
@@ -84,4 +84,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

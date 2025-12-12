@@ -304,7 +304,7 @@ const handleAsk = async () => {
 
 ```bash
 cd backend
-python test_memory.py
+python -m scripts.test_memory
 ```
 
 **测试场景**:
@@ -388,16 +388,15 @@ memory = ConversationSummaryMemory(llm=llm)
 - ✅ `backend/app/schemas/knowledge_base.py` - 添加 ChatMessage Schema
 - ✅ `backend/app/api/v1/endpoints/knowledge_base.py` - API 接口传递对话历史
 - ✅ `frontend/src/pages/KnowledgeBase.tsx` - 前端发送对话历史
-- ✅ `backend/test_memory.py` - 测试脚本
+- ✅ `backend/scripts/test_memory.py` - 测试脚本
 - ✅ `doc/Short-term_Memory功能说明.md` - 功能文档
 
 ---
 
 ## 下一步
 
-1. **测试功能**: 运行 `python test_memory.py` 测试对话历史功能
+1. **测试功能**: 运行 `python -m scripts.test_memory` 测试对话历史功能
 2. **浏览器测试**: 在浏览器中测试多轮对话
 3. **优化策略**: 根据需要实现对话历史长度限制或总结功能
 
 所有功能已实现! 🎉 现在支持 Short-term Memory 多轮对话了! 🎊
-

@@ -1,11 +1,9 @@
-"""
-更新测试点生成 Prompt 配置,添加业务线识别
-"""
+"""更新测试点生成 Prompt 配置，添加业务线识别。"""
 import sys
-import os
+from pathlib import Path
 
 # 添加项目根目录到 Python 路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import create_engine, text
 from app.core.config import settings
@@ -140,4 +138,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n执行失败: {str(e)}")
         sys.exit(1)
-

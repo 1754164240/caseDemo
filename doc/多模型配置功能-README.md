@@ -26,7 +26,7 @@ backend/
 │   │   └── model_config.py              # Schema 定义
 │   └── api/v1/endpoints/
 │       └── model_config.py              # API 路由
-└── create_model_configs_table.py        # 数据库迁移脚本
+└── scripts/create_model_configs_table.py        # 数据库迁移脚本
 ```
 
 ### 前端文件
@@ -81,7 +81,7 @@ bat\create-model-configs-table.bat
 **其他系统:**
 ```bash
 cd backend
-python create_model_configs_table.py
+python -m scripts.create_model_configs_table
 ```
 
 ### 2. 启动服务
@@ -89,7 +89,7 @@ python create_model_configs_table.py
 **后端:**
 ```bash
 cd backend
-python main.py
+python -m scripts.main
 ```
 
 **前端:**

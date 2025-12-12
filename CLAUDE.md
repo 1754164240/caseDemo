@@ -32,7 +32,7 @@ cd backend
 pip install -r requirements.txt
 
 # 启动开发服务器 (热重载,监听 0.0.0.0:8000)
-python main.py
+python -m scripts.main
 
 # 或使用批处理脚本 (Windows)
 ..\bat\start-backend.bat
@@ -63,10 +63,10 @@ npm run lint
 
 ### 测试
 
-项目暂无自动化测试框架。测试文件位于 `backend/` 根目录,用于手动验证功能:
-- `test_*.py` - 各模块功能测试
-- `create_test_user.py` - 创建测试用户
-- `set_superuser.py` - 设置超级管理员
+项目暂无自动化测试框架。测试脚本集中在 `backend/scripts/` 目录,用于手动验证功能:
+- `backend/scripts/test_*.py` - 各模块功能测试
+- `backend/scripts/create_test_user.py` - 创建测试用户
+- `backend/scripts/set_superuser.py` - 设置超级管理员
 
 ## 核心架构
 
@@ -211,8 +211,8 @@ MILVUS_PORT=19530
 项目使用 Alembic 进行迁移,但当前主要通过 SQLAlchemy 自动创建表 (`main.py` 中的 `Base.metadata.create_all()`)。
 
 手动创建表的脚本:
-- `backend/create_system_config_table.py`
-- `backend/create_model_configs_table.py`
+- `backend/scripts/create_system_config_table.py`
+- `backend/scripts/create_model_configs_table.py`
 
 ## 重要注意事项
 

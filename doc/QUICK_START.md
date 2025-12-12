@@ -82,7 +82,7 @@ npm install
 鎴栨墜鍔ㄦ墽琛岋細
 ```bash
 cd backend
-python main.py
+python -m scripts.main
 ```
 
 **鍚姩鍓嶇**锛堟柊缁堢绐楀彛锛夛細

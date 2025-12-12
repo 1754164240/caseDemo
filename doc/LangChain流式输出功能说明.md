@@ -489,7 +489,7 @@ while (true) {
 ```bash
 # 后端
 cd backend
-python main.py
+python -m scripts.main
 
 # 前端
 cd frontend

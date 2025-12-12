@@ -171,5 +171,4 @@ if __name__ == "__main__":
     else:
         test_document_parsing()
         print()
-        print("提示: 运行 'python test_document_processing.py api' 测试 OpenAI API 连接")
-
+        print("提示: 运行 'python -m scripts.test_document_processing api' 测试 OpenAI API 连接")

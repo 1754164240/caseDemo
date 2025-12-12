@@ -3,7 +3,7 @@ Create the test_point_histories table (latest definition with code column).
 """
 import sys
 
-from run_migration import run_migration
+from scripts.run_migration import run_migration
 
 SQL_FILE = "005_add_test_point_histories.sql"
 

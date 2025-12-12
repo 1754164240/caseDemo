@@ -12,11 +12,10 @@ call .venv\Scripts\activate.bat
 
 echo.
 echo 运行数据库迁移脚本...
-python create_system_config_table.py
+python -m scripts.create_system_config_table
 
 echo.
 echo ========================================
 echo 完成
 echo ========================================
 pause
-

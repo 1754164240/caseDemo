@@ -82,7 +82,7 @@ File "D:\caseDemo1\backend\.venv\Lib\site-packages\sqlalchemy\dialects\postgresq
 #### 方法 1: 使用自动修复脚本（推荐）
 ```bash
 cd backend
-python fix_env.py
+python -m scripts.fix_env
 ```
 
 #### 方法 2: 手动修复
@@ -103,7 +103,7 @@ DATABASE_URL=postgresql+psycopg://testcase:testcase123@localhost:5432/test_case_
 #### 验证修复
 ```bash
 cd backend
-python check_config.py
+python -m scripts.check_config
 ```
 
 ---
@@ -442,7 +442,7 @@ MODEL_NAME=gpt-4
 
 ```bash
 cd backend
-python test_document_processing.py
+python -m scripts.test_document_processing
 ```
 
 这将测试:
@@ -454,7 +454,7 @@ python test_document_processing.py
 
 ```bash
 cd backend
-python test_document_processing.py api
+python -m scripts.test_document_processing api
 ```
 
 这将验证:

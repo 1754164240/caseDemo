@@ -15,8 +15,7 @@ if exist ".venv\Scripts\activate.bat" (
 )
 
 REM 运行脚本
-python create_test_user.py
+python -m scripts.create_test_user
 
 echo.
 pause
-

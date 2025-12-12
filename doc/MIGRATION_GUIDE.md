@@ -34,7 +34,7 @@ python -c "import langgraph; print(langgraph.__version__)"
 ### 步骤 3: 测试应用
 
 ```bash
-python main.py
+python -m scripts.main
 ```
 
 如果启动成功，迁移完成！✅

@@ -8,7 +8,7 @@ echo.
 cd /d "%~dp0..\backend"
 
 echo 正在运行迁移脚本...
-python create_model_configs_table.py
+python -m scripts.create_model_configs_table
 
 if %ERRORLEVEL% EQU 0 (
     echo.
@@ -24,4 +24,3 @@ if %ERRORLEVEL% EQU 0 (
 
 echo.
 pause
-

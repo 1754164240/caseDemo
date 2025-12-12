@@ -73,7 +73,7 @@ def __init__(self, db: Session = None):
 
 #### 3. **添加数据库配置** ✅
 
-**执行脚本**: `backend/add_embedding_config.py`
+**执行脚本**: `backend/scripts/add_embedding_config.py`
 ```python
 from app.db.session import SessionLocal
 from app.models.system_config import SystemConfig
@@ -94,7 +94,7 @@ db.close()
 ### 验证结果
 
 ```bash
-$ python test_rag_config.py
+$ python -m scripts.test_rag_config
 
 ============================================================
 测试 RAG 服务配置
@@ -210,8 +210,7 @@ Embedding 配置:
 
 - ✅ `backend/app/core/config.py` - 添加 EMBEDDING_MODEL 配置
 - ✅ `backend/app/services/rag_service.py` - 从数据库读取 embedding 模型配置
-- ✅ `backend/add_embedding_config.py` - 添加数据库配置脚本
-- ✅ `backend/test_rag_config.py` - 测试配置脚本
+- ✅ `backend/scripts/add_embedding_config.py` - 添加数据库配置脚本
+- ✅ `backend/scripts/test_rag_config.py` - 测试配置脚本
 
 所有问题已解决! 🎉 现在可以正常上传文档并进行流式问答了! 🎊
-

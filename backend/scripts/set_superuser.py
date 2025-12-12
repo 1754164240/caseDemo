@@ -100,11 +100,10 @@ if __name__ == "__main__":
         list_users()
         print()
         print("使用方法:")
-        print("  python set_superuser.py <username>")
+        print("  python -m scripts.set_superuser <username>")
         print()
         print("示例:")
-        print("  python set_superuser.py admin")
+        print("  python -m scripts.set_superuser admin")
     
     print()
     print("=" * 80)
-

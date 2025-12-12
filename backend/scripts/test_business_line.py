@@ -1,11 +1,9 @@
-"""
-测试业务线功能
-"""
+"""测试业务线功能"""
 import sys
-import os
+from pathlib import Path
 
 # 添加项目根目录到 Python 路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.services.ai_service import AIService
 from app.db.session import SessionLocal
@@ -218,4 +216,3 @@ if __name__ == "__main__":
     test_test_case_generation()
     
     print("\n所有测试完成!")
-

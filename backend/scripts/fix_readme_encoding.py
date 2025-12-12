@@ -1,7 +1,5 @@
-"""
-修复 readme.md 文件的编码问题
-"""
-import os
+"""修复 readme.md 文件的编码问题。"""
+from scripts import REPO_ROOT
 
 # README 内容
 readme_content = """# 智能测试用例平台（保险行业）
@@ -119,18 +117,17 @@ MIT License
 """
 
 # 写入文件
-readme_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'readme.md')
+readme_path = REPO_ROOT / "readme.md"
 
 # 删除旧文件
-if os.path.exists(readme_path):
-    os.remove(readme_path)
+if readme_path.exists():
+    readme_path.unlink()
     print(f"✅ 已删除旧文件: {readme_path}")
 
 # 写入新文件（UTF-8 编码，无 BOM）
-with open(readme_path, 'w', encoding='utf-8') as f:
+with readme_path.open('w', encoding='utf-8') as f:
     f.write(readme_content)
 
 print(f"✅ 已创建新文件: {readme_path}")
 print("✅ 文件编码: UTF-8 (无 BOM)")
 print("✅ 中文显示正常")
-

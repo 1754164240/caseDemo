@@ -12,6 +12,7 @@ email-validator==2.1.0
 # LangChain & LangGraph (1.0.2 版本)
 langchain==1.0.3
 langchain-openai==1.0.2
+langchain-deepseek==1.0.1
 langchain-community==1.0.0a1
 langchain-core==1.0.2
 langchain-milvus==0.2.2

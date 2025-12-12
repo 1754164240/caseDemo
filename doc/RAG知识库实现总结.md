@@ -72,7 +72,7 @@ class RAGService:
 
 ✅ **迁移脚本**:
 - `backend/migrations/004_add_knowledge_base.sql` - SQL 迁移脚本
-- `backend/run_knowledge_base_migration.py` - Python 执行脚本
+- `backend/scripts/run_knowledge_base_migration.py` - Python 执行脚本
 
 ✅ **迁移结果**:
 ```
@@ -347,7 +347,7 @@ backend/
 │       └── base.py                     # 模型导入 (更新)
 ├── migrations/
 │   └── 004_add_knowledge_base.sql      # 数据库迁移
-└── run_knowledge_base_migration.py     # 迁移执行脚本
+└── scripts/run_knowledge_base_migration.py     # 迁移执行脚本
 ```
 
 ### 前端
@@ -383,7 +383,7 @@ python -c "from app.services.rag_service import RAGService; print('✅ RAG Servi
 ✅ **数据库迁移测试**:
 ```bash
 cd backend
-python run_knowledge_base_migration.py
+python -m scripts.run_knowledge_base_migration
 ```
 
 ### 2. 前端测试
@@ -425,4 +425,3 @@ python run_knowledge_base_migration.py
 3. 上传测试文档
 4. 进行端到端测试
 5. 根据测试结果优化
-

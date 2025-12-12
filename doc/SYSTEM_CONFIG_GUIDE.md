@@ -27,7 +27,7 @@ create-system-config-table.bat
 ```bash
 cd backend
 .venv\Scripts\activate
-python create_system_config_table.py
+python -m scripts.create_system_config_table
 ```
 
 ### 2. 确保有超级管理员账号
@@ -189,7 +189,7 @@ UPDATE users SET is_superuser = true WHERE username = 'your_username';
 2. 重新启动后端：
    ```bash
    cd backend
-   python main.py
+   python -m scripts.main
    ```
 
 ### 问题 3: 数据库表不存在

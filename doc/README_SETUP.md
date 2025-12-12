@@ -86,7 +86,7 @@ SECRET_KEY=your-secret-key-change-this-in-production
 #### 启动后端服务
 
 ```bash
-python main.py
+python -m scripts.main
 ```
 
 后端服务将在 `http://localhost:8000` 启动。

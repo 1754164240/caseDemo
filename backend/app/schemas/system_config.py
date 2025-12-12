@@ -54,10 +54,14 @@ class EmbeddingConfigUpdate(BaseModel):
     embedding_api_base: str
 
 
+class AutomationPlatformConfigUpdate(BaseModel):
+    """自动化测试平台配置"""
+    api_base: str
+
+
 class PromptConfigUpdate(BaseModel):
     test_point_prompt: str
     test_case_prompt: str
     contract_test_case_prompt: str  # 契约业务线测试用例 Prompt
     preservation_test_case_prompt: str  # 保全业务线测试用例 Prompt
     claim_test_case_prompt: str  # 理赔业务线测试用例 Prompt
-

@@ -27,17 +27,16 @@ if errorlevel 1 goto :test_doc
 echo.
 echo [执行] 测试文档处理...
 echo.
-python test_document_processing.py
+python -m scripts.test_document_processing
 goto :end
 
 :test_api
 echo.
 echo [执行] 测试 OpenAI API 连接...
 echo.
-python test_document_processing.py api
+python -m scripts.test_document_processing api
 goto :end
 
 :end
 echo.
 pause
-

@@ -1,4 +1,4 @@
-import { Card, Form, Input, Button, message, InputNumber, Spin, Tabs } from 'antd'
+import { Card, Form, Input, Button, message, Spin, Tabs } from 'antd'
 import { useState, useEffect } from 'react'
 import { systemConfigAPI } from '../services/api'
 import { DatabaseOutlined, ApiOutlined, FileTextOutlined, UserOutlined, AppstoreOutlined } from '@ant-design/icons'
@@ -11,6 +11,7 @@ export default function Settings() {
   const [loading, setLoading] = useState(false)
   const [milvusForm] = Form.useForm()
   const [embeddingForm] = Form.useForm()
+  const [automationForm] = Form.useForm()
   const [promptForm] = Form.useForm()
   const [initialLoading, setInitialLoading] = useState(true)
 
@@ -39,6 +40,12 @@ export default function Settings() {
         embedding_model: embeddingResponse.data.embedding_model,
         embedding_api_key: embeddingResponse.data.embedding_api_key_full,
         embedding_api_base: embeddingResponse.data.embedding_api_base,
+      })
+
+      // 加载自动化测试平台配置
+      const automationResponse = await systemConfigAPI.getAutomationPlatformConfig()
+      automationForm.setFieldsValue({
+        api_base: automationResponse.data.api_base,
       })
 
       // 加载 Prompt 配置
@@ -87,6 +94,21 @@ export default function Settings() {
         embedding_api_base: values.embedding_api_base,
       })
       message.success('Embedding 模型配置保存成功（部分配置需要重启后端才能完全生效）')
+    } catch (error: any) {
+      console.error('保存失败:', error)
+      message.error(error.response?.data?.detail || '保存失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const onSaveAutomationPlatform = async (values: any) => {
+    setLoading(true)
+    try {
+      await systemConfigAPI.updateAutomationPlatformConfig({
+        api_base: values.api_base || '',
+      })
+      message.success('自动化测试平台配置保存成功')
     } catch (error: any) {
       console.error('保存失败:', error)
       message.error(error.response?.data?.detail || '保存失败')
@@ -257,6 +279,38 @@ export default function Settings() {
         <TabPane
           tab={
             <span>
+              <AppstoreOutlined />
+              第三方接入
+            </span>
+          }
+          key="automation-platform"
+        >
+          <Card>
+            <Form
+              form={automationForm}
+              layout="vertical"
+              onFinish={onSaveAutomationPlatform}
+            >
+              <Form.Item
+                name="api_base"
+                label="自动化测试平台 API 地址"
+                rules={[{ required: true, message: '请输入自动化测试平台 API 地址' }]}
+                extra="用于与第三方自动化测试平台对接的基础 API 地址，例如：https://autotest.example.com/api"
+              >
+                <Input placeholder="https://autotest.example.com/api" />
+              </Form.Item>
+              <Form.Item>
+                <Button type="primary" htmlType="submit" loading={loading}>
+                  保存配置
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
+        </TabPane>
+
+        <TabPane
+          tab={
+            <span>
               <FileTextOutlined />
               Prompt 配置
             </span>
@@ -372,4 +426,3 @@ export default function Settings() {
     </div>
   )
 }
-

@@ -104,6 +104,5 @@ print("完成！")
 print("=" * 60)
 print()
 print("下一步:")
-print("1. 检查配置: python check_config.py")
-print("2. 启动服务: python main.py")
-
+print("1. 检查配置: python -m scripts.check_config")
+print("2. 启动服务: python -m scripts.main")

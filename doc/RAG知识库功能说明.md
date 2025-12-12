@@ -419,7 +419,7 @@ Model: gpt-4
 - `backend/app/schemas/knowledge_base.py` - Schema 定义
 - `backend/app/api/v1/endpoints/knowledge_base.py` - API 端点
 - `backend/migrations/004_add_knowledge_base.sql` - 数据库迁移
-- `backend/run_knowledge_base_migration.py` - 迁移脚本
+- `backend/scripts/run_knowledge_base_migration.py` - 迁移脚本
 
 ### 前端
 
@@ -430,4 +430,3 @@ Model: gpt-4
 ### 文档
 
 - `doc/RAG知识库功能说明.md` - 本文档
-

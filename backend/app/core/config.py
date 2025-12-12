@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
+    # 自动化测试平台
+    AUTOMATION_PLATFORM_API_BASE: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

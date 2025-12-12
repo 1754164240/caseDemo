@@ -8,7 +8,7 @@ echo.
 cd /d "%~dp0..\backend"
 
 echo Running migration script...
-python run_test_point_history_migration.py
+python -m scripts.run_test_point_history_migration
 
 if %ERRORLEVEL% EQU 0 (
     echo.

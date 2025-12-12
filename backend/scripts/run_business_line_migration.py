@@ -1,11 +1,5 @@
-"""
-执行业务线字段迁移
-"""
+"""执行业务线字段迁移。"""
 import sys
-import os
-
-# 添加项目根目录到 Python 路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from sqlalchemy import create_engine, text
 from app.core.config import settings
@@ -119,4 +113,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n执行失败: {str(e)}")
         sys.exit(1)
-

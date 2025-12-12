@@ -8,12 +8,12 @@ echo.
 cd backend
 
 echo 激活虚拟环境...
-call .\venv\Scripts\activate.bat
+call .\.venv\Scripts\activate.bat
 
 echo.
 echo 当前用户列表:
 echo.
-python set_superuser.py
+python -m scripts.set_superuser
 
 echo.
 echo ========================================
@@ -27,8 +27,8 @@ if "%username%"=="" (
 )
 
 echo.
-echo 正在设置用户 '%username%' 为超级管理员...
-python set_superuser.py %username%
+echo 正在设置用户 '%username%' 为超管...
+python -m scripts.set_superuser %username%
 
 echo.
 echo ========================================
@@ -38,4 +38,3 @@ echo.
 echo 提示: 如果设置成功，请重新登录以获取新的权限
 echo.
 pause
-

@@ -1,14 +1,19 @@
 import operator
 import time
-from typing import List, Dict, Any, TypedDict, Annotated
+from typing import List, Dict, Any, TypedDict, Annotated, Optional
 
 from typing_extensions import TypedDict as ExtTypedDict
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel
+from langchain.chat_models import init_chat_model
+from langchain_openai import OpenAIEmbeddings
+from langchain.agents.structured_output import ToolStrategy
+from langchain.agents import create_agent
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.graph import StateGraph, END, START
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.tools.date_tools import current_date_tool, current_datetime_tool
 
 
 class GraphState(ExtTypedDict):
@@ -18,6 +23,17 @@ class GraphState(ExtTypedDict):
     user_feedback: str
     test_cases: Annotated[List[Dict[str, Any]], operator.add]
     current_step: str
+
+
+class AgentContext(BaseModel):
+    """Agent 上下文，用于携带用户标识"""
+    user_id: Optional[str] = "default"
+
+
+class AgentResponseFormat(BaseModel):
+    """Agent 结构化输出格式"""
+    answer: str
+    detail: Optional[str] = None
 
 
 class AIService:
@@ -41,17 +57,34 @@ class AIService:
         temp_value = model_config.get("temperature", "1.0")
         temperature = float(temp_value) if temp_value and str(temp_value).strip() else 1.0
 
-        self.llm = ChatOpenAI(
-            model=model_config["model_name"],
-            api_key=model_config["api_key"],
-            base_url=model_config["api_base"] if model_config["api_base"] else None,
-            temperature=temperature,
-            max_tokens=model_config.get("max_tokens")
-        )
+        provider = model_config.get("provider") or None
+        base_url = model_config["api_base"] if model_config["api_base"] else None
+        try:
+            self.llm = init_chat_model(
+                model=model_config["model_name"],
+                model_provider=provider,
+                temperature=temperature,
+                timeout=30,
+                max_tokens=model_config.get("max_tokens"),
+                api_key=model_config["api_key"],
+                base_url=base_url,
+            )
+        except ImportError as e:
+            print(f"[WARNING] init_chat_model provider={provider} 加载失败，回退不指定 provider：{e}")
+            self.llm = init_chat_model(
+                model=model_config["model_name"],
+                temperature=temperature,
+                timeout=30,
+                max_tokens=model_config.get("max_tokens"),
+                api_key=model_config["api_key"],
+                base_url=base_url,
+            )
         self.embeddings = OpenAIEmbeddings(
             api_key=model_config["api_key"],
             base_url=model_config["api_base"] if model_config["api_base"] else None
         )
+        # 初始化基于结构化输出的 Agent
+        self.agent_executor = self._build_agent_executor()
 
     def _get_model_config(self, model_config_id: int = None) -> Dict[str, Any]:
         """
@@ -92,7 +125,8 @@ class AIService:
                         "api_base": config.api_base,
                         "model_name": config.model_name,
                         "temperature": temp,
-                        "max_tokens": config.max_tokens
+                        "max_tokens": config.max_tokens,
+                        "provider": config.provider,
                     }
             except Exception as e:
                 print(f"[WARNING] 从数据库获取模型配置失败: {e}")
@@ -103,8 +137,54 @@ class AIService:
             "api_base": settings.OPENAI_API_BASE,
             "model_name": settings.MODEL_NAME,
             "temperature": "0.7",
-            "max_tokens": None
+            "max_tokens": None,
+            "provider": None,
         }
+
+    def agent_chat(self, prompt: str) -> str:
+        """通过 LangChain Agent 调用 LLM, 支持使用内置工具"""
+        config = {"configurable": {"thread_id": "default"}}
+
+        # 如果问题涉及日期/时间, 直接调用工具并将结果注入上下文，保证使用工具输出
+        time_context = self._maybe_get_time_context(prompt)
+        messages = [{"role": "user", "content": prompt}]
+        if time_context:
+            messages.insert(0, {"role": "system", "content": time_context})
+
+        result = self.agent_executor.invoke(
+            {"messages": messages},
+            config=config,
+            context=AgentContext(user_id="default")
+        )
+        if isinstance(result, dict):
+            return result.get("structured_response") or result.get("output") or str(result)
+        return str(result)
+
+    def _build_agent_executor(self):
+        """创建结构化输出 Agent（参考 LangChain structured_output Quickstart）"""
+        tools = [current_date_tool, current_datetime_tool]
+        system_prompt = (
+            "你是一个可靠的助手。所有涉及日期/时间的回答必须调用提供的工具获取，"
+            "不要凭空猜测。时间统一使用东八区（北京/上海）时区。"
+        )
+        return create_agent(
+            model=self.llm,
+            system_prompt=system_prompt,
+            tools=tools,
+            context_schema=AgentContext,
+            response_format=ToolStrategy(AgentResponseFormat),
+        )
+
+    def _maybe_get_time_context(self, prompt: str) -> str:
+        """简单检测是否需要时间信息，必要时主动调用工具避免模型忽略工具"""
+        lower = prompt.lower()
+        keywords = ["date", "time", "today", "now", "日期", "时间", "今天", "几点", "几号"]
+        if any(k in lower for k in keywords):
+            # 优先返回带时间的上下文，提示来自工具
+            current_dt = current_datetime_tool()
+            current_d = current_date_tool()
+            return f"当前日期（东八区）：{current_d}，当前时间（东八区）：{current_dt}。"
+        return ""
         
     def get_embedding(self, text: str) -> List[float]:
         """获取文本嵌入向量"""
@@ -387,4 +467,3 @@ def get_ai_service(db: Session = None, model_config_id: int = None) -> AIService
         AIService 实例
     """
     return AIService(db=db, model_config_id=model_config_id)
-

@@ -1,14 +1,9 @@
-"""
-执行知识库数据库迁移
-"""
+"""执行知识库数据库迁移。"""
 import sys
-import os
-
-# 添加项目根目录到 Python 路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from sqlalchemy import create_engine, text
 from app.core.config import settings
+from scripts import MIGRATIONS_DIR
 
 
 def run_migration():
@@ -27,11 +22,10 @@ def run_migration():
             
             try:
                 # 读取 SQL 文件
-                sql_file = os.path.join(os.path.dirname(__file__), "migrations", "004_add_knowledge_base.sql")
-                
+                sql_file = MIGRATIONS_DIR / "004_add_knowledge_base.sql"
+
                 print(f"\n1. 读取 SQL 文件: {sql_file}")
-                with open(sql_file, 'r', encoding='utf-8') as f:
-                    sql_content = f.read()
+                sql_content = sql_file.read_text(encoding='utf-8')
                 
                 # 分割 SQL 语句
                 sql_statements = [stmt.strip() for stmt in sql_content.split(';') if stmt.strip()]
@@ -122,4 +116,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n执行失败: {str(e)}")
         sys.exit(1)
-

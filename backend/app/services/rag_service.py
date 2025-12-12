@@ -4,7 +4,9 @@ RAG (Retrieval-Augmented Generation) 服务
 支持 Short-term Memory (对话历史)
 """
 from typing import List, Dict, Any, Optional, Tuple
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from pydantic import BaseModel
+from langchain.chat_models import init_chat_model
+from langchain_openai import OpenAIEmbeddings
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
@@ -12,10 +14,23 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_milvus import Milvus
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.agents.structured_output import ToolStrategy
+from langchain.agents import create_agent
 from app.core.config import settings
+from app.tools.date_tools import current_date_tool, current_datetime_tool
 from sqlalchemy.orm import Session
 import os
 
+
+class AgentContext(BaseModel):
+    """Agent 上下文，用于携带用户标识"""
+    user_id: Optional[str] = "default"
+
+
+class AgentResponseFormat(BaseModel):
+    """Agent 结构化输出格式"""
+    answer: str
+    detail: Optional[str] = None
 
 class RAGService:
     """RAG 知识库问答服务"""
@@ -24,30 +39,58 @@ class RAGService:
         """初始化 RAG 服务"""
         self.db = db
 
-        # 从数据库读取配置
+        # 读取模型与向量配置（优先 model_configs 表，其次 system_config 表，最后环境变量）
         api_key = settings.OPENAI_API_KEY
         api_base = settings.OPENAI_API_BASE
         model_name = settings.MODEL_NAME
+        temperature = 1.0
+        model_provider = None
         embedding_model = settings.EMBEDDING_MODEL
         embedding_api_key = settings.EMBEDDING_API_KEY
         embedding_api_base = settings.EMBEDDING_API_BASE
 
         if db:
-            from app.models.system_config import SystemConfig
-            configs = db.query(SystemConfig).filter(
-                SystemConfig.config_key.in_([
-                    'OPENAI_API_KEY', 'OPENAI_API_BASE', 'MODEL_NAME',
-                    'EMBEDDING_MODEL', 'EMBEDDING_API_KEY', 'EMBEDDING_API_BASE'
-                ])
-            ).all()
+            # 先从 model_configs 取默认启用的模型
+            try:
+                from app.models.model_config import ModelConfig
 
-            config_dict = {c.config_key: c.config_value for c in configs}
-            api_key = config_dict.get('OPENAI_API_KEY', api_key)
-            api_base = config_dict.get('OPENAI_API_BASE', api_base)
-            model_name = config_dict.get('MODEL_NAME', model_name)
-            embedding_model = config_dict.get('EMBEDDING_MODEL', embedding_model)
-            embedding_api_key = config_dict.get('EMBEDDING_API_KEY', embedding_api_key)
-            embedding_api_base = config_dict.get('EMBEDDING_API_BASE', embedding_api_base)
+                default_model = db.query(ModelConfig).filter(
+                    ModelConfig.is_default == True,
+                    ModelConfig.is_active == True
+                ).first()
+                if default_model:
+                    api_key = default_model.api_key or api_key
+                    api_base = default_model.api_base or api_base
+                    model_name = default_model.model_name or model_name
+                    model_provider = default_model.provider or model_provider
+                    if default_model.temperature and str(default_model.temperature).strip():
+                        try:
+                            temperature = float(default_model.temperature)
+                        except Exception:
+                            temperature = 1.0
+                    print("[INFO] RAG 使用默认模型配置（model_configs 表）")
+            except Exception as e:
+                print(f"[WARNING] 读取默认模型配置失败，回退到系统配置: {e}")
+
+            # 再从 system_config 读取覆盖
+            try:
+                from app.models.system_config import SystemConfig
+                configs = db.query(SystemConfig).filter(
+                    SystemConfig.config_key.in_([
+                        'OPENAI_API_KEY', 'OPENAI_API_BASE', 'MODEL_NAME',
+                        'EMBEDDING_MODEL', 'EMBEDDING_API_KEY', 'EMBEDDING_API_BASE'
+                    ])
+                ).all()
+
+                config_dict = {c.config_key: c.config_value for c in configs}
+                api_key = config_dict.get('OPENAI_API_KEY', api_key)
+                api_base = config_dict.get('OPENAI_API_BASE', api_base)
+                model_name = config_dict.get('MODEL_NAME', model_name)
+                embedding_model = config_dict.get('EMBEDDING_MODEL', embedding_model)
+                embedding_api_key = config_dict.get('EMBEDDING_API_KEY', embedding_api_key)
+                embedding_api_base = config_dict.get('EMBEDDING_API_BASE', embedding_api_base)
+            except Exception as e:
+                print(f"[WARNING] 读取 system_config 配置失败，继续使用环境变量: {e}")
 
         # 如果 Embedding 配置为空,使用 LLM 的配置
         if not embedding_api_key:
@@ -58,16 +101,32 @@ class RAGService:
         print(f"[INFO] RAG 服务配置:")
         print(f"  LLM API Base: {api_base}")
         print(f"  LLM Model: {model_name}")
+        print(f"  LLM Temperature: {temperature}")
         print(f"  Embedding API Base: {embedding_api_base}")
         print(f"  Embedding Model: {embedding_model}")
 
         # 初始化 LLM
-        self.llm = ChatOpenAI(
-            model=model_name,
-            api_key=api_key,
-            base_url=api_base if api_base else None,
-            temperature=0.3  # 降低温度以获得更准确的答案
-        )
+        base_url = api_base if api_base else None
+        try:
+            self.llm = init_chat_model(
+                model=model_name,
+                model_provider=model_provider,
+                temperature=temperature,
+                timeout=30,
+                max_tokens=None,
+                api_key=api_key,
+                base_url=base_url,
+            )
+        except ImportError as e:
+            print(f"[WARNING] init_chat_model provider={model_provider} 加载失败，回退不指定 provider：{e}")
+            self.llm = init_chat_model(
+                model=model_name,
+                temperature=temperature,
+                timeout=30,
+                max_tokens=None,
+                api_key=api_key,
+                base_url=base_url,
+            )
 
         # 初始化 Embeddings
         self.embeddings = OpenAIEmbeddings(
@@ -75,6 +134,8 @@ class RAGService:
             api_key=embedding_api_key,
             base_url=embedding_api_base if embedding_api_base else None
         )
+        # 初始化结构化输出 Agent
+        self.agent_executor = self._build_agent_executor()
 
         # 初始化文本分割器
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -633,3 +694,46 @@ class RAGService:
             print(f"[ERROR] 删除集合失败: {str(e)}")
             return False
 
+    def agent_chat(self, prompt: str) -> str:
+        """通过 LangChain Agent 调用 LLM, 支持使用内置工具"""
+        config = {"configurable": {"thread_id": "default"}}
+
+        # 如果问题涉及日期/时间, 主动调用工具并注入上下文，避免模型忽略工具
+        time_context = self._maybe_get_time_context(prompt)
+        messages = [{"role": "user", "content": prompt}]
+        if time_context:
+            messages.insert(0, {"role": "system", "content": time_context})
+
+        result = self.agent_executor.invoke(
+            {"messages": messages},
+            config=config,
+            context=AgentContext(user_id="default")
+        )
+        if isinstance(result, dict):
+            return result.get("structured_response") or result.get("output") or str(result)
+        return str(result)
+
+    def _build_agent_executor(self):
+        """创建结构化输出 Agent（参考 LangChain structured_output Quickstart）"""
+        tools = [current_date_tool, current_datetime_tool]
+        system_prompt = (
+            "你是一个可靠的助手。所有涉及日期/时间的回答必须调用提供的工具获取，"
+            "不要凭空猜测。时间统一使用东八区（北京/上海）时区。"
+        )
+        return create_agent(
+            model=self.llm,
+            system_prompt=system_prompt,
+            tools=tools,
+            context_schema=AgentContext,
+            response_format=ToolStrategy(AgentResponseFormat),
+        )
+
+    def _maybe_get_time_context(self, prompt: str) -> str:
+        """简单检测是否需要时间信息，必要时主动调用工具避免模型忽略工具"""
+        lower = prompt.lower()
+        keywords = ["date", "time", "today", "now", "日期", "时间", "今天", "几点", "几号"]
+        if any(k in lower for k in keywords):
+            current_dt = current_datetime_tool()
+            current_d = current_date_tool()
+            return f"当前日期（东八区）：{current_d}，当前时间（东八区）：{current_dt}。"
+        return ""

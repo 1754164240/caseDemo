@@ -42,7 +42,7 @@ echo.
 :check_env
 REM 修复 .env 文件
 echo [执行] 检查并修复 .env 文件...
-python fix_env.py
+python -m scripts.fix_env
 if errorlevel 1 (
     echo [错误] .env 文件修复失败
     pause
@@ -52,7 +52,7 @@ echo.
 
 REM 检查配置
 echo [执行] 验证配置...
-python check_config.py
+python -m scripts.check_config
 if errorlevel 1 (
     echo.
     echo [错误] 配置验证失败
@@ -69,7 +69,7 @@ echo ========================================
 echo.
 echo 下一步:
 echo 1. 确保 Docker 容器正在运行: docker-compose up -d
-echo 2. 启动后端服务: python main.py
+echo 2. 启动后端服务: python -m scripts.main
 echo.
 pause
 

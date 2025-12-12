@@ -60,7 +60,7 @@ bat\start-backend.bat
 
 **鎵ц鍐呭**:
 - 杩涘叆 backend 鐩綍
-- 鎵ц `python main.py`
+- 鎵ц `python -m scripts.main`
 - 鍚姩 FastAPI 鏈嶅姟锛坔ttp://localhost:8000锛?
 
 ---
@@ -122,7 +122,7 @@ bat\create-test-point-history-table.bat
 ```
 
 **执行内容**:
-- 运行 `backend/run_test_point_history_migration.py`
+- 运行 `backend/scripts/run_test_point_history_migration.py`
 - 创建/更新 `test_point_histories` 表及索引
 - 确保版本历史功能可用
 

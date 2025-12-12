@@ -44,8 +44,7 @@ echo.
 
 REM 运行配置检查
 echo [执行] 验证安装...
-python check_config.py
+python -m scripts.check_config
 
 echo.
 pause
-

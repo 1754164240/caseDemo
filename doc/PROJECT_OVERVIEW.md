@@ -271,7 +271,7 @@ WebSocket 通知前端
 
 ### 开发环境
 - 使用 Docker Compose 启动数据库
-- 后端使用 `python main.py` 启动
+- 后端使用 `python -m scripts.main` 启动
 - 前端使用 `npm run dev` 启动
 
 ### 生产环境

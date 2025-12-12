@@ -5,6 +5,7 @@ import json
 import os
 
 from app.api.deps import get_db, get_current_active_superuser
+from app.core.config import settings
 from app.models.system_config import SystemConfig
 from app.models.user import User
 from app.schemas.system_config import (
@@ -14,11 +15,14 @@ from app.schemas.system_config import (
     MilvusConfigUpdate,
     ModelConfigUpdate,
     EmbeddingConfigUpdate,
-    PromptConfigUpdate
+    PromptConfigUpdate,
+    AutomationPlatformConfigUpdate
 )
 
 router = APIRouter()
 
+# 自动化测试平台默认地址
+DEFAULT_AUTOMATION_PLATFORM_API_BASE = settings.AUTOMATION_PLATFORM_API_BASE or ""
 
 # 默认 Prompt 模板
 DEFAULT_TEST_POINT_PROMPT = """你是一个专业的保险行业测试专家。请从需求文档中识别所有测试点。
@@ -375,6 +379,53 @@ def update_embedding_config(
     }
 
 
+@router.get("/automation-platform")
+def get_automation_platform_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_superuser)
+):
+    """获取自动化测试平台配置"""
+    api_base_config = get_or_create_config(
+        db,
+        "AUTOMATION_PLATFORM_API_BASE",
+        DEFAULT_AUTOMATION_PLATFORM_API_BASE,
+        "自动化测试平台 API 地址"
+    )
+
+    return {
+        "api_base": api_base_config.config_value
+    }
+
+
+@router.put("/automation-platform")
+def update_automation_platform_config(
+    config: AutomationPlatformConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_superuser)
+):
+    """更新自动化测试平台配置"""
+    api_base_config = get_or_create_config(
+        db,
+        "AUTOMATION_PLATFORM_API_BASE",
+        DEFAULT_AUTOMATION_PLATFORM_API_BASE,
+        "自动化测试平台 API 地址"
+    )
+    api_base_config.config_value = config.api_base
+
+    db.commit()
+
+    # 更新 .env 文件
+    update_env_file("AUTOMATION_PLATFORM_API_BASE", config.api_base)
+
+    # 更新运行时配置，便于后续接口直接读取
+    settings.AUTOMATION_PLATFORM_API_BASE = config.api_base
+
+    return {
+        "message": "自动化测试平台 API 地址更新成功",
+        "api_base": config.api_base
+    }
+
+
 @router.get("/prompts")
 def get_prompt_config(
     db: Session = Depends(get_db),
@@ -554,4 +605,3 @@ def delete_config(
     db.commit()
     
     return {"message": "配置删除成功"}
-

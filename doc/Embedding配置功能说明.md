@@ -237,7 +237,7 @@ def update_embedding_config(config: EmbeddingConfigUpdate, db: Session = Depends
 ### 测试结果
 
 ```bash
-$ python test_embedding_config.py
+$ python -m scripts.test_embedding_config
 
 ============================================================
 测试 Embedding 配置功能
@@ -279,7 +279,7 @@ Embedding 配置:
 - ✅ `backend/app/services/rag_service.py` - 支持单独的 Embedding 配置
 - ✅ `frontend/src/services/api.ts` - 添加前端 API 接口
 - ✅ `frontend/src/pages/Settings.tsx` - 添加 Embedding 配置 Tab
-- ✅ `backend/test_embedding_config.py` - 测试脚本
+- ✅ `backend/scripts/test_embedding_config.py` - 测试脚本
 
 ---
 
@@ -292,4 +292,3 @@ Embedding 配置:
 5. **保存并重启**: 保存配置后重启后端服务
 
 所有功能已实现! 🎉 现在可以为 Embedding 模型配置单独的 API 和 Key 了! 🎊
-
