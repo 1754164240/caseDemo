@@ -57,6 +57,7 @@ class Settings(BaseSettings):
 
     # 自动化测试平台
     AUTOMATION_PLATFORM_API_BASE: str = ""
+    AUTOMATION_PLATFORM_MODULE_ID: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

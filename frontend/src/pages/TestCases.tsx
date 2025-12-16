@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Table, Button, Modal, Form, Input, Select, message, Space, Popconfirm, Tabs, Tag, Drawer, Descriptions, Card, Tooltip } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, ThunderboltOutlined, EyeOutlined, MinusCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, DownloadOutlined, RobotOutlined } from '@ant-design/icons'
-import { testPointsAPI, testCasesAPI, requirementsAPI } from '../services/api'
+import { testPointsAPI, testCasesAPI, requirementsAPI, systemConfigAPI } from '../services/api'
 import dayjs from 'dayjs'
 
 const { TabPane } = Tabs
@@ -44,12 +44,16 @@ export default function TestCases() {
   const [approvalType, setApprovalType] = useState<'testPoint' | 'testCase'>('testPoint')
   const [approvalItem, setApprovalItem] = useState<any>(null)
   const [approvalForm] = Form.useForm()
+  
+  // 自动化平台配置
+  const [defaultModuleId, setDefaultModuleId] = useState<string>('')
 
   useEffect(() => {
     loadRequirements()
     loadAllTestPoints()
     loadTestPoints()
     loadTestCases()
+    loadAutomationConfig()
 
     // 监听 WebSocket 更新
     const handleTestPointsUpdate = () => {
@@ -64,6 +68,17 @@ export default function TestCases() {
       window.removeEventListener('test-cases-updated', handleTestCasesUpdate)
     }
   }, [])
+  
+  const loadAutomationConfig = async () => {
+    try {
+      const response = await systemConfigAPI.getAutomationPlatformConfig()
+      if (response.data?.module_id) {
+        setDefaultModuleId(response.data.module_id)
+      }
+    } catch (error) {
+      console.error('加载自动化平台配置失败:', error)
+    }
+  }
 
   const loadRequirements = async () => {
     try {
@@ -302,15 +317,119 @@ export default function TestCases() {
   }
 
   const handleGenerateAutomation = async (testCase: any) => {
-    try {
-      message.info('正在生成自动化用例...')
-      // TODO: 实现生成自动化用例的API调用
-      // await automationAPI.generate(testCase.id)
-      message.success('自动化用例生成功能开发中，敬请期待')
-    } catch (error: any) {
-      console.error('生成自动化用例失败:', error)
-      message.error(error.response?.data?.detail || '生成失败')
-    }
+    // 弹出对话框让用户输入模块ID
+    Modal.confirm({
+      title: '生成自动化测试用例',
+      width: 500,
+      content: (
+        <div>
+          <p>请输入自动化平台的模块ID{defaultModuleId && '（可选，留空使用系统配置）'}：</p>
+          <Input
+            id="moduleIdInput"
+            placeholder={defaultModuleId || '例如：a7f94755-b7c6-42ba-ba12-9026d9760cf5'}
+            defaultValue={defaultModuleId}
+          />
+          {defaultModuleId && (
+            <div style={{ marginTop: 8, color: '#52c41a', fontSize: 12 }}>
+              ✓ 系统已配置默认模块ID，可直接生成
+            </div>
+          )}
+          <div style={{ marginTop: 16, color: '#999', fontSize: 12 }}>
+            <div>测试用例：{testCase.title}</div>
+            <div>系统将自动匹配场景并在自动化平台创建用例</div>
+          </div>
+        </div>
+      ),
+      okText: '生成',
+      cancelText: '取消',
+      onOk: async () => {
+        const moduleIdInput = (document.getElementById('moduleIdInput') as HTMLInputElement)?.value
+        const moduleId = moduleIdInput?.trim() || defaultModuleId
+        
+        if (!moduleId) {
+          message.error('请输入模块ID或在系统配置中设置默认模块ID')
+          return Promise.reject()
+        }
+        
+        try {
+          message.loading({ content: '正在生成自动化用例...', key: 'generateAuto', duration: 0 })
+          
+          const response = await testCasesAPI.generateAutomation(testCase.id, moduleId)
+          const result = response.data
+          
+          if (result.success) {
+            message.success({
+              content: '自动化用例创建成功！',
+              key: 'generateAuto',
+              duration: 3
+            })
+            
+            // 显示详细信息
+            Modal.success({
+              title: '自动化用例创建成功',
+              width: 700,
+              content: (
+                <div>
+                  <Descriptions column={1} bordered size="small" style={{ marginBottom: 16 }}>
+                    <Descriptions.Item label="测试用例">
+                      {result.data.test_case.code} - {result.data.test_case.title}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="匹配场景">
+                      <Tag color="blue">{result.data.matched_scenario.scenario_code}</Tag>
+                      {result.data.matched_scenario.name}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="自动化用例ID">
+                      <Tag color="green">{result.data.usercase_id}</Tag>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="场景ID">
+                      {result.data.scene_id}
+                    </Descriptions.Item>
+                  </Descriptions>
+                  
+                  {result.data.automation_case && (
+                    <div style={{ marginTop: 16 }}>
+                      <h4>自动化平台返回信息：</h4>
+                      <Descriptions column={1} bordered size="small">
+                        <Descriptions.Item label="用例编号">
+                          {result.data.automation_case.num}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="创建人">
+                          {result.data.automation_case.createBy}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="创建时间">
+                          {new Date(result.data.automation_case.createTime).toLocaleString('zh-CN')}
+                        </Descriptions.Item>
+                      </Descriptions>
+                    </div>
+                  )}
+                  
+                  {result.data.supported_fields && (
+                    <div style={{ marginTop: 16, padding: 12, background: '#f0f0f0', borderRadius: 4 }}>
+                      <div style={{ fontWeight: 'bold', marginBottom: 8 }}>支持的字段：</div>
+                      <pre style={{ margin: 0, fontSize: 12 }}>
+                        {JSON.stringify(result.data.supported_fields, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )
+            })
+          } else {
+            message.error({
+              content: result.message || '创建失败',
+              key: 'generateAuto'
+            })
+          }
+        } catch (error: any) {
+          console.error('生成自动化用例失败:', error)
+          message.error({
+            content: error.response?.data?.detail || '生成失败',
+            key: 'generateAuto'
+          })
+          return Promise.reject()
+        }
+      }
+    })
   }
 
   // 导出测试用例到Excel

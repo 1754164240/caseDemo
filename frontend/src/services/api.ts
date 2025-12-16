@@ -86,7 +86,7 @@ export const systemConfigAPI = {
 
   // 自动化测试平台配置
   getAutomationPlatformConfig: () => api.get('/system-config/automation-platform'),
-  updateAutomationPlatformConfig: (data: { api_base: string }) =>
+  updateAutomationPlatformConfig: (data: { api_base: string; module_id: string }) =>
     api.put('/system-config/automation-platform', data),
 
   // Prompt 配置
@@ -264,6 +264,11 @@ export const testCasesAPI = {
   approve: (id: number, data: { approval_status: string; approval_comment?: string }) =>
     api.post(`/test-cases/${id}/approve`, data),
   resetApproval: (id: number) => api.post(`/test-cases/${id}/reset-approval`),
+  // 匹配场景
+  matchScenario: (id: number) => api.post(`/test-cases/${id}/match-scenario`),
+  // 生成自动化用例
+  generateAutomation: (id: number, moduleId: string) => 
+    api.post(`/test-cases/${id}/generate-automation`, null, { params: { module_id: moduleId } }),
   // 导出Excel
   exportExcel: (params?: { requirement_id?: number; test_point_id?: number }) => {
     const queryParams = new URLSearchParams()

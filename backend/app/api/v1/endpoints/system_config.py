@@ -391,9 +391,17 @@ def get_automation_platform_config(
         DEFAULT_AUTOMATION_PLATFORM_API_BASE,
         "自动化测试平台 API 地址"
     )
+    
+    module_id_config = get_or_create_config(
+        db,
+        "AUTOMATION_PLATFORM_MODULE_ID",
+        "",
+        "自动化测试平台模块ID"
+    )
 
     return {
-        "api_base": api_base_config.config_value
+        "api_base": api_base_config.config_value,
+        "module_id": module_id_config.config_value
     }
 
 
@@ -411,18 +419,28 @@ def update_automation_platform_config(
         "自动化测试平台 API 地址"
     )
     api_base_config.config_value = config.api_base
+    
+    module_id_config = get_or_create_config(
+        db,
+        "AUTOMATION_PLATFORM_MODULE_ID",
+        "",
+        "自动化测试平台模块ID"
+    )
+    module_id_config.config_value = config.module_id
 
     db.commit()
 
     # 更新 .env 文件
     update_env_file("AUTOMATION_PLATFORM_API_BASE", config.api_base)
+    update_env_file("AUTOMATION_PLATFORM_MODULE_ID", config.module_id)
 
     # 更新运行时配置，便于后续接口直接读取
     settings.AUTOMATION_PLATFORM_API_BASE = config.api_base
 
     return {
-        "message": "自动化测试平台 API 地址更新成功",
-        "api_base": config.api_base
+        "message": "自动化测试平台配置更新成功",
+        "api_base": config.api_base,
+        "module_id": config.module_id
     }
 
 

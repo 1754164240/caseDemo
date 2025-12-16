@@ -15,11 +15,14 @@ from app.models.user import User
 from app.models.test_case import TestCase
 from app.models.test_point import TestPoint
 from app.models.requirement import Requirement
+from app.models.scenario import Scenario
+from app.models.system_config import SystemConfig
 from app.schemas.test_case import TestCase as TestCaseSchema, TestCaseCreate, TestCaseUpdate, TestCaseApproval
 from app.schemas.common import PaginatedResponse
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.services.document_parser import DocumentParser
+from app.services.automation_service import automation_service
 
 router = APIRouter()
 
@@ -511,4 +514,211 @@ def export_test_cases_to_excel(
             "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
         }
     )
+
+
+@router.post("/{test_case_id}/match-scenario")
+def match_scenario(
+    test_case_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    为测试用例匹配场景
+    
+    根据测试用例的业务线、标题、描述等信息，智能匹配最合适的场景
+    """
+    # 查询测试用例及其关联信息
+    test_case = db.query(TestCase).join(TestPoint).join(Requirement).filter(
+        TestCase.id == test_case_id,
+        Requirement.user_id == current_user.id
+    ).first()
+    
+    if not test_case:
+        raise HTTPException(status_code=404, detail="测试用例不存在")
+    
+    # 获取测试点的业务线
+    test_point = test_case.test_point
+    business_line = test_point.business_line
+    
+    # 查询匹配的场景
+    scenarios_query = db.query(Scenario).filter(Scenario.is_active == True)
+    
+    # 如果有业务线信息，优先匹配相同业务线的场景
+    if business_line:
+        scenarios_query = scenarios_query.filter(Scenario.business_line == business_line)
+    
+    scenarios = scenarios_query.all()
+    
+    if not scenarios:
+        # 如果没有匹配的场景，返回所有启用的场景
+        scenarios = db.query(Scenario).filter(Scenario.is_active == True).all()
+    
+    # 智能匹配：基于关键词匹配最相关的场景
+    matched_scenario = None
+    if scenarios:
+        # 简单的关键词匹配逻辑
+        test_case_keywords = set((test_case.title + ' ' + (test_case.description or '')).lower().split())
+        
+        max_score = 0
+        for scenario in scenarios:
+            scenario_keywords = set((scenario.name + ' ' + (scenario.description or '')).lower().split())
+            # 计算关键词重叠度
+            overlap = len(test_case_keywords & scenario_keywords)
+            if overlap > max_score:
+                max_score = overlap
+                matched_scenario = scenario
+        
+        # 如果没有关键词重叠，返回第一个场景
+        if not matched_scenario:
+            matched_scenario = scenarios[0]
+    
+    if not matched_scenario:
+        return {
+            "matched": False,
+            "message": "未找到匹配的场景，请先创建场景",
+            "test_case": {
+                "id": test_case.id,
+                "code": test_case.code,
+                "title": test_case.title,
+                "business_line": business_line
+            }
+        }
+    
+    return {
+        "matched": True,
+        "scenario_code": matched_scenario.scenario_code,
+        "scenario_name": matched_scenario.name,
+        "scenario": {
+            "id": matched_scenario.id,
+            "scenario_code": matched_scenario.scenario_code,
+            "name": matched_scenario.name,
+            "description": matched_scenario.description,
+            "business_line": matched_scenario.business_line,
+            "channel": matched_scenario.channel,
+            "module": matched_scenario.module
+        },
+        "test_case": {
+            "id": test_case.id,
+            "code": test_case.code,
+            "title": test_case.title,
+            "business_line": business_line
+        },
+        "message": f"成功匹配到场景: {matched_scenario.scenario_code}"
+    }
+
+
+@router.post("/{test_case_id}/generate-automation")
+def generate_automation_case(
+    test_case_id: int,
+    module_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    生成自动化测试用例
+    
+    1. 匹配场景
+    2. 调用自动化平台创建用例
+    3. 获取支持的字段
+    
+    参数:
+    - module_id: 模块ID，可选。如果不传，则从系统配置中读取
+    """
+    # 检查自动化服务是否可用
+    if not automation_service:
+        raise HTTPException(
+            status_code=503,
+            detail="自动化测试平台服务未配置或不可用"
+        )
+    
+    # 如果没有传module_id，从系统配置读取
+    if not module_id:
+        module_id_config = db.query(SystemConfig).filter(
+            SystemConfig.config_key == "AUTOMATION_PLATFORM_MODULE_ID"
+        ).first()
+        
+        if module_id_config and module_id_config.config_value:
+            module_id = module_id_config.config_value
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="模块ID未提供，且系统配置中未配置默认模块ID，请先在系统配置中配置自动化测试平台的模块ID"
+            )
+    
+    # 查询测试用例及其关联信息
+    test_case = db.query(TestCase).join(TestPoint).join(Requirement).filter(
+        TestCase.id == test_case_id,
+        Requirement.user_id == current_user.id
+    ).first()
+    
+    if not test_case:
+        raise HTTPException(status_code=404, detail="测试用例不存在")
+    
+    # 1. 匹配场景
+    test_point = test_case.test_point
+    business_line = test_point.business_line
+    
+    scenarios_query = db.query(Scenario).filter(Scenario.is_active == True)
+    if business_line:
+        scenarios_query = scenarios_query.filter(Scenario.business_line == business_line)
+    
+    scenarios = scenarios_query.all()
+    
+    if not scenarios:
+        scenarios = db.query(Scenario).filter(Scenario.is_active == True).all()
+    
+    if not scenarios:
+        raise HTTPException(
+            status_code=404,
+            detail="未找到可用的场景，请先在场景管理中创建场景"
+        )
+    
+    # 简单匹配：选择第一个匹配的场景
+    matched_scenario = scenarios[0]
+    
+    # 2. 调用自动化平台创建用例
+    try:
+        # 准备用例名称和描述
+        case_name = test_case.title
+        case_description = test_case.description or ""
+        
+        # 构建场景ID（使用场景的数据库ID或自定义映射）
+        # 注意：这里假设场景的ID可以直接使用，实际可能需要映射
+        scene_id = matched_scenario.scenario_code  # 使用场景编号作为场景ID
+        
+        result = automation_service.create_case_with_fields(
+            name=case_name,
+            module_id=module_id,
+            scene_id=scene_id,
+            scenario_type="API",
+            description=case_description
+        )
+        
+        return {
+            "success": True,
+            "message": "自动化用例创建成功",
+            "data": {
+                "test_case": {
+                    "id": test_case.id,
+                    "code": test_case.code,
+                    "title": test_case.title
+                },
+                "matched_scenario": {
+                    "id": matched_scenario.id,
+                    "scenario_code": matched_scenario.scenario_code,
+                    "name": matched_scenario.name
+                },
+                "automation_case": result.get("case", {}),
+                "supported_fields": result.get("fields", {}),
+                "usercase_id": result.get("usercase_id"),
+                "scene_id": result.get("scene_id")
+            }
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] 创建自动化用例失败: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"创建自动化用例失败: {str(e)}"
+        )
 

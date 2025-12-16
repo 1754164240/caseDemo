@@ -57,6 +57,7 @@ class EmbeddingConfigUpdate(BaseModel):
 class AutomationPlatformConfigUpdate(BaseModel):
     """自动化测试平台配置"""
     api_base: str
+    module_id: str
 
 
 class PromptConfigUpdate(BaseModel):
