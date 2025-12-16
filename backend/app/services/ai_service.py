@@ -57,15 +57,18 @@ class AIService:
         temp_value = model_config.get("temperature", "1.0")
         temperature = float(temp_value) if temp_value and str(temp_value).strip() else 1.0
 
-        provider = model_config.get("provider") or None
+        provider = model_config.get("provider") or settings.PROVIDER
         base_url = model_config["api_base"] if model_config["api_base"] else None
+        actual_provider = provider
+        if provider and provider.lower() == "modelscope":
+            actual_provider = "openai"
         # 使用配置的超时时间
-        timeout = getattr(settings, 'AI_REQUEST_TIMEOUT', 180)
+        timeout = getattr(settings, 'AI_REQUEST_TIMEOUT', 180) or 180
         print(f"[INFO] 初始化 AI 服务 - 模型: {model_config['model_name']}, 超时: {timeout}秒, 温度: {temperature}, 最大重试: {settings.AI_MAX_RETRIES}次")
         try:
             self.llm = init_chat_model(
                 model=model_config["model_name"],
-                model_provider=provider,
+                model_provider=actual_provider,
                 temperature=temperature,
                 timeout=timeout,
                 max_tokens=model_config.get("max_tokens"),
@@ -265,7 +268,7 @@ class AIService:
             )
 
             print(f"[INFO] 调用 OpenAI API 提取测试点...")
-            print(f"[INFO] 配置信息 - 超时: {getattr(settings, 'AI_REQUEST_TIMEOUT', 120)}秒, 最大重试: {settings.AI_MAX_RETRIES}次")
+            print(f"[INFO] 配置信息 - 超时: {getattr(settings, 'AI_REQUEST_TIMEOUT', 180)}秒, 最大重试: {settings.AI_MAX_RETRIES}次")
             retries = max(settings.AI_MAX_RETRIES, 1)
             delay = max(settings.AI_RETRY_INTERVAL, 1)
             response = None
@@ -396,7 +399,7 @@ class AIService:
         
         # 添加重试机制
         print(f"[INFO] 调用 OpenAI API 生成测试用例...")
-        print(f"[INFO] 配置信息 - 超时: {getattr(settings, 'AI_REQUEST_TIMEOUT', 120)}秒, 最大重试: {settings.AI_MAX_RETRIES}次")
+        print(f"[INFO] 配置信息 - 超时: {getattr(settings, 'AI_REQUEST_TIMEOUT', 180)}秒, 最大重试: {settings.AI_MAX_RETRIES}次")
         retries = max(settings.AI_MAX_RETRIES, 1)
         delay = max(settings.AI_RETRY_INTERVAL, 1)
         response = None
