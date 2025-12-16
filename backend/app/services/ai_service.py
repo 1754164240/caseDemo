@@ -60,7 +60,8 @@ class AIService:
         provider = model_config.get("provider") or None
         base_url = model_config["api_base"] if model_config["api_base"] else None
         # 使用配置的超时时间
-        timeout = getattr(settings, 'AI_REQUEST_TIMEOUT', 120)
+        timeout = getattr(settings, 'AI_REQUEST_TIMEOUT', 180)
+        print(f"[INFO] 初始化 AI 服务 - 模型: {model_config['model_name']}, 超时: {timeout}秒, 温度: {temperature}, 最大重试: {settings.AI_MAX_RETRIES}次")
         try:
             self.llm = init_chat_model(
                 model=model_config["model_name"],
@@ -263,23 +264,33 @@ class AIService:
                 feedback_instruction=feedback_instruction,
             )
 
-            print("[INFO] 调用 OpenAI API...")
+            print(f"[INFO] 调用 OpenAI API 提取测试点...")
+            print(f"[INFO] 配置信息 - 超时: {getattr(settings, 'AI_REQUEST_TIMEOUT', 120)}秒, 最大重试: {settings.AI_MAX_RETRIES}次")
             retries = max(settings.AI_MAX_RETRIES, 1)
             delay = max(settings.AI_RETRY_INTERVAL, 1)
             response = None
             last_error = None
             for attempt in range(1, retries + 1):
                 try:
+                    start_time = time.time()
+                    print(f"[INFO] 第 {attempt}/{retries} 次尝试...")
                     response = self.llm.invoke(messages)
+                    elapsed_time = time.time() - start_time
+                    print(f"[INFO] API 调用成功，耗时: {elapsed_time:.2f}秒")
                     break
                 except Exception as invoke_error:
+                    elapsed_time = time.time() - start_time
                     last_error = invoke_error
+                    error_type = type(invoke_error).__name__
                     print(
-                        f"[WARNING] OpenAI API 调用失败（第 {attempt}/{retries} 次）：{invoke_error}"
+                        f"[WARNING] OpenAI API 调用失败（第 {attempt}/{retries} 次，耗时: {elapsed_time:.2f}秒）"
                     )
+                    print(f"[WARNING] 错误类型: {error_type}, 错误信息: {str(invoke_error)[:200]}")
                     if attempt < retries:
+                        print(f"[INFO] 等待 {delay} 秒后重试...")
                         time.sleep(delay)
             if response is None:
+                print(f"[ERROR] 所有 {retries} 次尝试均失败")
                 raise last_error or RuntimeError("OpenAI 响应为空")
             print(f"[INFO] OpenAI API 响应成功，内容长度: {len(response.content)}")
 
@@ -384,7 +395,8 @@ class AIService:
         )
         
         # 添加重试机制
-        print("[INFO] 调用 OpenAI API 生成测试用例...")
+        print(f"[INFO] 调用 OpenAI API 生成测试用例...")
+        print(f"[INFO] 配置信息 - 超时: {getattr(settings, 'AI_REQUEST_TIMEOUT', 120)}秒, 最大重试: {settings.AI_MAX_RETRIES}次")
         retries = max(settings.AI_MAX_RETRIES, 1)
         delay = max(settings.AI_RETRY_INTERVAL, 1)
         response = None
@@ -392,17 +404,26 @@ class AIService:
         
         for attempt in range(1, retries + 1):
             try:
+                start_time = time.time()
+                print(f"[INFO] 第 {attempt}/{retries} 次尝试...")
                 response = self.llm.invoke(messages)
-                print(f"[INFO] OpenAI API 响应成功，内容长度: {len(response.content)}")
+                elapsed_time = time.time() - start_time
+                print(f"[INFO] API 调用成功，耗时: {elapsed_time:.2f}秒，内容长度: {len(response.content)}")
                 break
             except Exception as invoke_error:
+                elapsed_time = time.time() - start_time
                 last_error = invoke_error
-                print(f"[WARNING] OpenAI API 调用失败（第 {attempt}/{retries} 次）：{invoke_error}")
+                error_type = type(invoke_error).__name__
+                print(
+                    f"[WARNING] OpenAI API 调用失败（第 {attempt}/{retries} 次，耗时: {elapsed_time:.2f}秒）"
+                )
+                print(f"[WARNING] 错误类型: {error_type}, 错误信息: {str(invoke_error)[:200]}")
                 if attempt < retries:
+                    print(f"[INFO] 等待 {delay} 秒后重试...")
                     time.sleep(delay)
         
         if response is None:
-            print(f"[ERROR] OpenAI API 调用失败，所有重试均失败")
+            print(f"[ERROR] 所有 {retries} 次尝试均失败")
             raise last_error or RuntimeError("OpenAI 响应为空")
         
         # 解析响应

@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # LLM retry
     AI_MAX_RETRIES: int = 3
     AI_RETRY_INTERVAL: float = 2.0
-    AI_REQUEST_TIMEOUT: int = 120  # API 请求超时时间(秒)
+    AI_REQUEST_TIMEOUT: int = 180  # API 请求超时时间(秒)，建议 180 秒
 
     # JWT
     SECRET_KEY: str = "your-secret-key-change-this-in-production"
