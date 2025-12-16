@@ -59,12 +59,14 @@ class AIService:
 
         provider = model_config.get("provider") or None
         base_url = model_config["api_base"] if model_config["api_base"] else None
+        # 使用配置的超时时间
+        timeout = getattr(settings, 'AI_REQUEST_TIMEOUT', 120)
         try:
             self.llm = init_chat_model(
                 model=model_config["model_name"],
                 model_provider=provider,
                 temperature=temperature,
-                timeout=30,
+                timeout=timeout,
                 max_tokens=model_config.get("max_tokens"),
                 api_key=model_config["api_key"],
                 base_url=base_url,
@@ -74,7 +76,7 @@ class AIService:
             self.llm = init_chat_model(
                 model=model_config["model_name"],
                 temperature=temperature,
-                timeout=30,
+                timeout=timeout,
                 max_tokens=model_config.get("max_tokens"),
                 api_key=model_config["api_key"],
                 base_url=base_url,
@@ -381,9 +383,29 @@ class AIService:
             context=requirement_context
         )
         
-        response = self.llm.invoke(messages)
+        # 添加重试机制
+        print("[INFO] 调用 OpenAI API 生成测试用例...")
+        retries = max(settings.AI_MAX_RETRIES, 1)
+        delay = max(settings.AI_RETRY_INTERVAL, 1)
+        response = None
+        last_error = None
         
-        # 解析响应（简化处理）
+        for attempt in range(1, retries + 1):
+            try:
+                response = self.llm.invoke(messages)
+                print(f"[INFO] OpenAI API 响应成功，内容长度: {len(response.content)}")
+                break
+            except Exception as invoke_error:
+                last_error = invoke_error
+                print(f"[WARNING] OpenAI API 调用失败（第 {attempt}/{retries} 次）：{invoke_error}")
+                if attempt < retries:
+                    time.sleep(delay)
+        
+        if response is None:
+            print(f"[ERROR] OpenAI API 调用失败，所有重试均失败")
+            raise last_error or RuntimeError("OpenAI 响应为空")
+        
+        # 解析响应
         try:
             import json
             content = response.content
@@ -391,26 +413,33 @@ class AIService:
             end = content.rfind(']') + 1
             if start != -1 and end > start:
                 test_cases = json.loads(content[start:end])
+                print(f"[INFO] 成功解析 {len(test_cases)} 个测试用例")
                 return test_cases
-        except:
-            pass
-        
-        # 返回示例数据
-        return [
-            {
-                "title": f"{test_point.get('title', '')} - 正常流程",
-                "description": "验证正常业务流程",
-                "preconditions": "系统正常运行，用户已登录",
-                "test_steps": [
-                    {"step": 1, "action": "打开功能页面", "expected": "页面正常显示"},
-                    {"step": 2, "action": "输入有效数据", "expected": "数据验证通过"},
-                    {"step": 3, "action": "提交表单", "expected": "操作成功"}
-                ],
-                "expected_result": "功能正常执行",
-                "priority": test_point.get('priority', 'medium'),
-                "test_type": "functional"
-            }
-        ]
+            
+            print("[WARNING] 未找到 JSON 数组，尝试解析整个响应")
+            test_cases = json.loads(content)
+            if isinstance(test_cases, list):
+                return test_cases
+            
+            raise ValueError("AI 响应格式不正确，未返回测试用例列表")
+        except Exception as parse_error:
+            print(f"[ERROR] 解析测试用例失败: {parse_error}")
+            # 返回示例数据
+            return [
+                {
+                    "title": f"{test_point.get('title', '')} - 正常流程",
+                    "description": "验证正常业务流程（AI生成失败，返回示例数据）",
+                    "preconditions": "系统正常运行，用户已登录",
+                    "test_steps": [
+                        {"step": 1, "action": "打开功能页面", "expected": "页面正常显示"},
+                        {"step": 2, "action": "输入有效数据", "expected": "数据验证通过"},
+                        {"step": 3, "action": "提交表单", "expected": "操作成功"}
+                    ],
+                    "expected_result": "功能正常执行",
+                    "priority": test_point.get('priority', 'medium'),
+                    "test_type": "functional"
+                }
+            ]
     
     def create_workflow(self):
         """创建 LangGraph 工作流 - 使用 LangGraph 1.0+ API"""
