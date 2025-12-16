@@ -16,6 +16,7 @@ from app.models.test_case import TestCase
 from app.models.test_point import TestPoint
 from app.models.requirement import Requirement
 from app.schemas.test_case import TestCase as TestCaseSchema, TestCaseCreate, TestCaseUpdate, TestCaseApproval
+from app.schemas.common import PaginatedResponse
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.services.document_parser import DocumentParser
@@ -119,7 +120,7 @@ def generate_test_cases_background(
         db.close()
 
 
-@router.get("/", response_model=List[TestCaseSchema])
+@router.get("/", response_model=PaginatedResponse[TestCaseSchema])
 def read_test_cases(
     requirement_id: int = None,
     test_point_id: int = None,
@@ -155,8 +156,18 @@ def read_test_cases(
     # 按创建时间倒序排序
     query = query.order_by(TestCase.created_at.desc())
 
+    # 获取总数
+    total = query.count()
+
+    # 获取分页数据
     test_cases = query.offset(skip).limit(limit).all()
-    return test_cases
+    
+    return PaginatedResponse(
+        items=test_cases,
+        total=total,
+        skip=skip,
+        limit=limit
+    )
 
 
 @router.get("/{test_case_id}", response_model=TestCaseSchema)

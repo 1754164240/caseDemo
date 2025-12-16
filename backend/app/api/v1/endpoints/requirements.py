@@ -13,6 +13,8 @@ from app.api.deps import get_current_active_user
 from app.models.user import User
 from app.models.requirement import Requirement, FileType, RequirementStatus
 from app.schemas.requirement import Requirement as RequirementSchema, RequirementCreate, RequirementUpdate, RequirementWithStats
+from app.schemas.common import PaginatedResponse
+from app.schemas.common import PaginatedResponse
 from app.core.config import settings
 from app.services.document_parser import DocumentParser
 from app.services.document_embedding_service import document_embedding_service
@@ -299,7 +301,7 @@ async def create_requirement(
     return requirement
 
 
-@router.get("/", response_model=List[RequirementWithStats])
+@router.get("/", response_model=PaginatedResponse[RequirementWithStats])
 def read_requirements(
     skip: int = 0,
     limit: int = 100,
@@ -356,6 +358,10 @@ def read_requirements(
     if end_date:
         query = query.filter(Requirement.created_at <= end_date)
 
+    # 获取总数
+    total = query.count()
+
+    # 获取分页数据
     requirements = (
         query.order_by(Requirement.created_at.desc())
         .offset(skip)
@@ -375,7 +381,12 @@ def read_requirements(
         req_dict.test_cases_count = test_cases_count
         result.append(req_dict)
     
-    return result
+    return PaginatedResponse(
+        items=result,
+        total=total,
+        skip=skip,
+        limit=limit
+    )
 
 
 @router.get("/{requirement_id}", response_model=RequirementSchema)

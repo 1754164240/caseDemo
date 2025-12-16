@@ -5,6 +5,7 @@ import {
   DashboardOutlined,
   FileTextOutlined,
   CheckSquareOutlined,
+  AppstoreOutlined,
   SettingOutlined,
   UserOutlined,
   LogoutOutlined,
@@ -53,6 +54,11 @@ export default function Layout({ children }: LayoutProps) {
       key: '/test-cases',
       icon: <CheckSquareOutlined />,
       label: '用例管理',
+    },
+    {
+      key: '/scenarios',
+      icon: <AppstoreOutlined />,
+      label: '场景管理',
     },
     {
       key: '/knowledge-base',

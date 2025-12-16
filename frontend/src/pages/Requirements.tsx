@@ -46,7 +46,7 @@ export default function Requirements() {
       }
 
       const response = await requirementsAPI.list(params)
-      const data = response.data || []
+      const data = response.data?.items || response.data || []
       setRequirements(data)
 
       const currentProcessingId = processingRequirementIdRef.current
@@ -175,7 +175,7 @@ export default function Requirements() {
 
       // 加载该需求的测试点
       const response = await testPointsAPI.list({ requirement_id: record.id })
-      setTestPoints(response.data)
+      setTestPoints(response.data?.items || response.data || [])
     } catch (error) {
       message.error('加载需求详情失败')
     }

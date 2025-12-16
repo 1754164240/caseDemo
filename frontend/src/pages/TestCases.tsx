@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Table, Button, Modal, Form, Input, Select, message, Space, Popconfirm, Tabs, Tag, Drawer, Descriptions, Card, Tooltip } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, ThunderboltOutlined, EyeOutlined, MinusCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, DownloadOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, EditOutlined, ThunderboltOutlined, EyeOutlined, MinusCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, DownloadOutlined, RobotOutlined } from '@ant-design/icons'
 import { testPointsAPI, testCasesAPI, requirementsAPI } from '../services/api'
 import dayjs from 'dayjs'
 
@@ -68,7 +68,7 @@ export default function TestCases() {
   const loadRequirements = async () => {
     try {
       const response = await requirementsAPI.list()
-      setRequirements(response.data)
+      setRequirements(response.data?.items || response.data || [])
     } catch (error) {
       console.error('Failed to load requirements:', error)
     }
@@ -78,7 +78,7 @@ export default function TestCases() {
   const loadAllTestPoints = async () => {
     try {
       const response = await testPointsAPI.list()
-      setAllTestPoints(response.data)
+      setAllTestPoints(response.data?.items || response.data || [])
     } catch (error) {
       console.error('Failed to load all test points:', error)
     }
@@ -95,7 +95,7 @@ export default function TestCases() {
         params.search = testPointSearchKeyword
       }
       const response = await testPointsAPI.list(params)
-      setTestPoints(response.data)
+      setTestPoints(response.data?.items || response.data || [])
     } catch (error) {
       message.error('加载测试点失败')
     } finally {
@@ -117,7 +117,7 @@ export default function TestCases() {
         params.search = testCaseSearchKeyword
       }
       const response = await testCasesAPI.list(params)
-      setTestCases(response.data)
+      setTestCases(response.data?.items || response.data || [])
     } catch (error) {
       message.error('加载测试用例失败')
     } finally {
@@ -171,7 +171,7 @@ export default function TestCases() {
 
       // 加载该测试点的测试用例
       const response = await testCasesAPI.list({ test_point_id: record.id })
-      setTestPointCases(response.data)
+      setTestPointCases(response.data?.items || response.data || [])
     } catch (error) {
       message.error('加载测试点详情失败')
     }
@@ -298,6 +298,18 @@ export default function TestCases() {
     } catch (error: any) {
       console.error('重置失败:', error)
       message.error(error.response?.data?.detail || '重置失败')
+    }
+  }
+
+  const handleGenerateAutomation = async (testCase: any) => {
+    try {
+      message.info('正在生成自动化用例...')
+      // TODO: 实现生成自动化用例的API调用
+      // await automationAPI.generate(testCase.id)
+      message.success('自动化用例生成功能开发中，敬请期待')
+    } catch (error: any) {
+      console.error('生成自动化用例失败:', error)
+      message.error(error.response?.data?.detail || '生成失败')
     }
   }
 
@@ -640,7 +652,7 @@ export default function TestCases() {
     {
       title: '操作',
       key: 'action',
-      width: 300,
+      width: 350,
       fixed: 'right' as const,
       render: (_: any, record: any) => (
         <Space>
@@ -682,6 +694,16 @@ export default function TestCases() {
               </Button>
             </Tooltip>
           )}
+          <Tooltip title="生成自动化用例">
+            <Button
+              type="link"
+              icon={<RobotOutlined />}
+              size="small"
+              onClick={() => handleGenerateAutomation(record)}
+            >
+              自动化
+            </Button>
+          </Tooltip>
           <Popconfirm
             title="确定删除此测试用例吗？"
             onConfirm={() => handleDeleteTestCase(record.id)}

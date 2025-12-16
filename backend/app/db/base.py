@@ -14,6 +14,7 @@ def import_models():
     from app.models.knowledge_base import KnowledgeDocument, QARecord
     from app.models.model_config import ModelConfig
     from app.models.test_point_history import TestPointHistory
+    from app.models.scenario import Scenario
     return (
         User,
         Requirement,
@@ -24,5 +25,6 @@ def import_models():
         QARecord,
         ModelConfig,
         TestPointHistory,
+        Scenario,
     )
 

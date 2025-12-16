@@ -22,6 +22,7 @@ from app.schemas.test_point import (
     TestPointBulkUpdateRequest,
     RequirementHistoryVersion,
 )
+from app.schemas.common import PaginatedResponse
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.services.document_parser import DocumentParser
@@ -503,7 +504,7 @@ def optimize_test_points_background(
     finally:
         db.close()
 
-@router.get("/", response_model=List[TestPointWithCases])
+@router.get("/", response_model=PaginatedResponse[TestPointWithCases])
 def read_test_points(
     requirement_id: int = None,
     search: str = None,
@@ -532,6 +533,10 @@ def read_test_points(
     # 按创建时间倒序排序
     query = query.order_by(TestPoint.created_at.desc())
 
+    # 获取总数
+    total = query.count()
+
+    # 获取分页数据
     test_points = query.offset(skip).limit(limit).all()
 
     result = []
@@ -540,7 +545,12 @@ def read_test_points(
         tp_dict.test_cases_count = len(tp.test_cases)
         result.append(tp_dict)
 
-    return result
+    return PaginatedResponse(
+        items=result,
+        total=total,
+        skip=skip,
+        limit=limit
+    )
 
 
 @router.get("/{test_point_id}", response_model=TestPointSchema)

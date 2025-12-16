@@ -281,3 +281,51 @@ export const testCasesAPI = {
     })
   },
 }
+
+// 场景管理 API
+export const scenariosAPI = {
+  // 获取场景列表
+  list: (params?: {
+    skip?: number
+    limit?: number
+    search?: string
+    business_line?: string
+    channel?: string
+    module?: string
+    is_active?: boolean
+  }) => api.get('/scenarios/', { params }),
+  
+  // 获取单个场景
+  get: (id: number) => api.get(`/scenarios/${id}`),
+  
+  // 通过编号获取场景
+  getByCode: (code: string) => api.get(`/scenarios/code/${code}`),
+  
+  // 创建场景
+  create: (data: {
+    scenario_code: string
+    name: string
+    description?: string
+    business_line?: string
+    channel?: string
+    module?: string
+    is_active?: boolean
+  }) => api.post('/scenarios/', data),
+  
+  // 更新场景
+  update: (id: number, data: {
+    scenario_code?: string
+    name?: string
+    description?: string
+    business_line?: string
+    channel?: string
+    module?: string
+    is_active?: boolean
+  }) => api.put(`/scenarios/${id}`, data),
+  
+  // 删除场景
+  delete: (id: number) => api.delete(`/scenarios/${id}`),
+  
+  // 切换场景状态
+  toggleStatus: (id: number) => api.post(`/scenarios/${id}/toggle-status`),
+}

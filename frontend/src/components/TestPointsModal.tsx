@@ -168,7 +168,7 @@ export default function TestPointsModal({
     let fetchedData: TestPointItem[] = []
     try {
       const response = await testPointsAPI.list({ requirement_id: requirement.id, limit: 500 })
-      fetchedData = response.data || []
+      fetchedData = response.data?.items || response.data || []
       if (preserveOrderIds && preserveOrderIds.length) {
         const lookup = new Map(fetchedData.map((item) => [item.id, item]))
         const ordered: TestPointItem[] = []
