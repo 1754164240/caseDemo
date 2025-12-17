@@ -686,17 +686,29 @@ def generate_automation_case(
         # 注意：这里假设场景的ID可以直接使用，实际可能需要映射
         scene_id = matched_scenario.scenario_code  # 使用场景编号作为场景ID
         
+        # 准备测试用例信息供AI匹配
+        test_case_info = {
+            "title": test_case.title,
+            "description": test_case.description or "",
+            "preconditions": test_case.preconditions or "",
+            "test_steps": str(test_case.test_steps) if test_case.test_steps else "",
+            "expected_result": test_case.expected_result or "",
+            "test_type": test_case.test_type or "",
+            "priority": test_case.priority or ""
+        }
+        
         result = automation_service.create_case_with_fields(
             name=case_name,
             module_id=module_id,
             scene_id=scene_id,
             scenario_type="API",
-            description=case_description
+            description=case_description,
+            test_case_info=test_case_info
         )
         
         return {
             "success": True,
-            "message": "自动化用例创建成功",
+            "message": "AI智能匹配并成功创建自动化用例（含明细）",
             "data": {
                 "test_case": {
                     "id": test_case.id,
@@ -708,9 +720,13 @@ def generate_automation_case(
                     "scenario_code": matched_scenario.scenario_code,
                     "name": matched_scenario.name
                 },
-                "automation_case": result.get("case", {}),
-                "supported_fields": result.get("fields", {}),
-                "usercase_id": result.get("usercase_id"),
+                "selected_template": result.get("selected_template", {}),
+                "created_case": result.get("created_case", {}),
+                "template_case": result.get("template_case", {}),
+                "case_detail": result.get("case_detail", {}),
+                "supported_fields": result.get("fields", []),
+                "new_usercase_id": result.get("new_usercase_id"),
+                "template_usercase_id": result.get("template_usercase_id"),
                 "scene_id": result.get("scene_id")
             }
         }
