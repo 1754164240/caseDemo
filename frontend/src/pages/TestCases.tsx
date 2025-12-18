@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Table, Button, Modal, Form, Input, Select, message, Space, Popconfirm, Tabs, Tag, Drawer, Descriptions, Card, Tooltip } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, ThunderboltOutlined, EyeOutlined, MinusCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, DownloadOutlined, RobotOutlined } from '@ant-design/icons'
-import { testPointsAPI, testCasesAPI, requirementsAPI, systemConfigAPI } from '../services/api'
+import { testPointsAPI, testCasesAPI, requirementsAPI } from '../services/api'
 import dayjs from 'dayjs'
 
 const { TabPane } = Tabs
@@ -44,16 +44,12 @@ export default function TestCases() {
   const [approvalType, setApprovalType] = useState<'testPoint' | 'testCase'>('testPoint')
   const [approvalItem, setApprovalItem] = useState<any>(null)
   const [approvalForm] = Form.useForm()
-  
-  // 自动化平台配置
-  const [defaultModuleId, setDefaultModuleId] = useState<string>('')
 
   useEffect(() => {
     loadRequirements()
     loadAllTestPoints()
     loadTestPoints()
     loadTestCases()
-    loadAutomationConfig()
 
     // 监听 WebSocket 更新
     const handleTestPointsUpdate = () => {
@@ -68,17 +64,6 @@ export default function TestCases() {
       window.removeEventListener('test-cases-updated', handleTestCasesUpdate)
     }
   }, [])
-  
-  const loadAutomationConfig = async () => {
-    try {
-      const response = await systemConfigAPI.getAutomationPlatformConfig()
-      if (response.data?.module_id) {
-        setDefaultModuleId(response.data.module_id)
-      }
-    } catch (error) {
-      console.error('加载自动化平台配置失败:', error)
-    }
-  }
 
   const loadRequirements = async () => {
     try {
@@ -317,187 +302,15 @@ export default function TestCases() {
   }
 
   const handleGenerateAutomation = async (testCase: any) => {
-    // 检查是否配置了模块ID
-    if (!defaultModuleId) {
-      Modal.warning({
-        title: '未配置模块ID',
-        content: (
-          <div>
-            <p>系统尚未配置自动化测试平台的模块ID。</p>
-            <p>请管理员在"系统配置" → "第三方接入"中配置模块ID后再使用此功能。</p>
-          </div>
-        ),
-      })
-      return
-    }
-
-    // 直接使用系统配置的模块ID进行AI匹配并创建用例
     try {
-      message.loading({ content: '正在进行AI智能匹配并创建用例...', key: 'generateAuto', duration: 0 })
-      
-      const response = await testCasesAPI.generateAutomation(testCase.id, defaultModuleId)
-      const result = response.data
-      
-      if (result.success) {
-        message.success({
-          content: '自动化用例创建成功！',
-          key: 'generateAuto',
-          duration: 3
-        })
-        
-        // 显示详细信息
-        Modal.success({
-          title: '🎉 自动化用例创建成功',
-          width: 900,
-          content: (
-            <div>
-              <Descriptions column={1} bordered size="small" style={{ marginBottom: 16 }}>
-                <Descriptions.Item label="测试用例">
-                  {result.data.test_case.code} - {result.data.test_case.title}
-                </Descriptions.Item>
-                <Descriptions.Item label="🤖 AI匹配的场景">
-                  <div>
-                    <Tag color="blue" style={{ fontSize: 13 }}>
-                      {result.data.matched_scenario.scenario_code}
-                    </Tag>
-                    <span style={{ marginLeft: 8, fontWeight: 'bold' }}>
-                      {result.data.matched_scenario.name}
-                    </span>
-                  </div>
-                </Descriptions.Item>
-                <Descriptions.Item label="场景ID">
-                  <Tag color="cyan">{result.data.scene_id}</Tag>
-                </Descriptions.Item>
-              </Descriptions>
-
-              {result.data.selected_template && (
-                <div style={{ marginTop: 16 }}>
-                  <h4 style={{ marginBottom: 12 }}>🤖 AI选择的最佳用例模板：</h4>
-                  <Descriptions column={1} bordered size="small">
-                    <Descriptions.Item label="用例ID">
-                      <Tag color="purple" style={{ fontSize: 13 }}>
-                        {result.data.selected_template.usercaseId}
-                      </Tag>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="用例名称">
-                      <strong style={{ fontSize: 14 }}>{result.data.selected_template.name}</strong>
-                    </Descriptions.Item>
-                    {result.data.selected_template.description && (
-                      <Descriptions.Item label="用例描述">
-                        <div style={{ color: '#666', lineHeight: 1.6 }}>
-                          {result.data.selected_template.description}
-                        </div>
-                      </Descriptions.Item>
-                    )}
-                    {result.data.selected_template.circulation && 
-                     result.data.selected_template.circulation.length > 0 && (
-                      <Descriptions.Item label="环节信息">
-                        {result.data.selected_template.circulation.map((circ: any, idx: number) => (
-                          <Tag key={idx} color="geekblue" style={{ marginRight: 8, marginBottom: 4 }}>
-                            {circ.name} ({circ.vargroup})
-                          </Tag>
-                        ))}
-                      </Descriptions.Item>
-                    )}
-                  </Descriptions>
-                </div>
-              )}
-              
-              {result.data.created_case && (
-                <div style={{ marginTop: 16 }}>
-                  <h4 style={{ marginBottom: 12, color: '#52c41a' }}>✅ 新创建的自动化用例：</h4>
-                  <Descriptions column={1} bordered size="small" style={{ background: '#f6ffed', borderColor: '#b7eb8f' }}>
-                    <Descriptions.Item label="用例ID">
-                      <Tag color="success" style={{ fontSize: 13 }}>
-                        {result.data.new_usercase_id}
-                      </Tag>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="用例编号">
-                      <strong>{result.data.created_case.num}</strong>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="用例名称">
-                      {result.data.created_case.name}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="创建人">
-                      {result.data.created_case.createBy}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="创建时间">
-                      {new Date(result.data.created_case.createTime).toLocaleString('zh-CN')}
-                    </Descriptions.Item>
-                    {result.data.created_case.tags && result.data.created_case.tags !== '[]' && (
-                      <Descriptions.Item label="标签">
-                        <div>
-                          {JSON.parse(result.data.created_case.tags || '[]').map((tag: string, idx: number) => (
-                            <Tag key={idx} color="green" style={{ marginBottom: 4 }}>
-                              {tag}
-                            </Tag>
-                          ))}
-                        </div>
-                      </Descriptions.Item>
-                    )}
-                  </Descriptions>
-                </div>
-              )}
-              
-              {result.data.supported_fields && result.data.supported_fields.length > 0 && (
-                <div style={{ marginTop: 16 }}>
-                  <h4 style={{ marginBottom: 12 }}>📋 用例字段参数（已包含在新用例中）：</h4>
-                  <div style={{ 
-                    maxHeight: 300, 
-                    overflowY: 'auto', 
-                    padding: 12, 
-                    background: '#f5f5f5', 
-                    borderRadius: 4,
-                    border: '1px solid #d9d9d9'
-                  }}>
-                    {result.data.supported_fields.map((field: any, idx: number) => (
-                      <div key={idx} style={{ 
-                        padding: '8px 12px', 
-                        marginBottom: 8, 
-                        background: 'white',
-                        borderRadius: 4,
-                        borderLeft: '3px solid #52c41a'
-                      }}>
-                        <div style={{ fontWeight: 'bold', color: '#52c41a' }}>
-                          {field.rowName || field.row}
-                        </div>
-                        <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-                          字段名: {field.row}
-                          {field.type && ` | 类型: ${field.type}`}
-                          {field.flag && ` | 标识: ${field.flag}`}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div style={{ marginTop: 16, padding: 12, background: '#e6f7ff', borderRadius: 4, borderLeft: '4px solid #1890ff' }}>
-                <div style={{ fontSize: 13, color: '#096dd9' }}>
-                  <strong>✨ AI智能创建流程：</strong>
-                  <div style={{ marginTop: 8, lineHeight: 1.8 }}>
-                    1️⃣ AI分析测试用例，智能匹配最佳业务场景 <br />
-                    2️⃣ AI从场景用例库中选择最佳模板 <br />
-                    3️⃣ 获取模板的完整结构和字段配置 <br />
-                    4️⃣ 一次性创建用例和明细（包含所有字段）
-                  </div>
-                </div>
-              </div>
-            </div>
-          )
-        })
-      } else {
-        message.error({
-          content: result.message || '匹配失败',
-          key: 'generateAuto'
-        })
-      }
+      const hide = message.loading('正在生成自动化用例...', 0)
+      await testCasesAPI.generateAutomation(testCase.id)
+      hide()
+      message.success('自动化用例生成完成')
     } catch (error: any) {
+      message.destroy()
       console.error('生成自动化用例失败:', error)
-      message.error({
-        content: error.response?.data?.detail || '生成失败',
-        key: 'generateAuto'
-      })
+      message.error(error.response?.data?.detail || '生成失败')
     }
   }
 

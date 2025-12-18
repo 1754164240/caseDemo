@@ -329,10 +329,8 @@ class AutomationPlatformService:
             "scenarioType": scenario_type,
             "description": description,
             "tags": tags,
-            "nodePath": "",
             "type": template_case_detail.get("type", ""),
-            "project": template_case_detail.get("project", ""),
-            "sceneIdModule": ""
+            "project": template_case_detail.get("project", "")
         }
         
         # 添加circulation信息
@@ -340,18 +338,57 @@ class AutomationPlatformService:
             payload["circulation"] = circulation
         elif template_case_detail.get("circulation"):
             payload["circulation"] = template_case_detail.get("circulation")
-        
-        # 添加caseDefine（用例明细结构，包含header和body）
-        if template_case_detail.get("caseDefine"):
-            case_define = template_case_detail.get("caseDefine")
+
+        # ??caseDefine??????????header?body?
+        if template_case_detail.get("caseDefine") or template_case_detail.get("case_define"):
+            case_define_raw = template_case_detail.get("caseDefine") or template_case_detail.get("case_define")
+
+            if isinstance(case_define_raw, str):
+                try:
+                    case_define = json.loads(case_define_raw)
+                except Exception:
+                    print(f"[WARNING] caseDefine ????????????????????200??: {case_define_raw[:200]}")
+                    case_define = {}
+            elif isinstance(case_define_raw, dict):
+                case_define = case_define_raw
+            else:
+                case_define = {}
+
+            header_value = case_define.get("header")
+            if isinstance(header_value, str):
+                try:
+                    header_value = json.loads(header_value)
+                except Exception:
+                    header_value = []
+            case_define["header"] = header_value or []
+
+            body_value = case_define.get("body")
+            if isinstance(body_value, str):
+                try:
+                    body_value = json.loads(body_value)
+                except Exception:
+                    body_value = None
+            if not body_value:
+                alt_body = template_case_detail.get("caseBodyList") or template_case_detail.get("case_body_list")
+                if isinstance(alt_body, str):
+                    try:
+                        alt_body = json.loads(alt_body)
+                    except Exception:
+                        alt_body = None
+                body_value = alt_body or []
+            case_define["body"] = body_value
+
             payload["caseDefine"] = case_define
-            
-            # 日志显示结构信息
+            if body_value:
+                payload["caseBodyList"] = body_value
+
             header_count = len(case_define.get("header", [])) if case_define.get("header") else 0
             body_count = len(case_define.get("body", [])) if case_define.get("body") else 0
-            print(f"[INFO] ✅ caseDefine 已添加: {header_count} 个字段(header), {body_count} 个测试数据(body)")
+            print(f"[INFO] ? caseDefine ???: {header_count} ???(header), {body_count} ?????(body)")
+            if body_count == 0:
+                print("[WARNING] caseDefine.body ?????????????????????AI?????")
         else:
-            print(f"[WARNING] ⚠️ template_case_detail 中没有 caseDefine 信息")
+            print(f"[WARNING] ?? template_case_detail ???caseDefine??")
             print(f"[DEBUG] template_case_detail keys: {list(template_case_detail.keys()) if template_case_detail else 'None'}")
         
         try:
@@ -359,6 +396,11 @@ class AutomationPlatformService:
             print(f"[INFO] URL: {url}")
             print(f"[INFO] 用例名称: {name}")
             print(f"[INFO] Payload keys: {list(payload.keys())}")
+            try:
+                payload_preview = json.dumps(payload, ensure_ascii=False)
+                print(f"[DEBUG] 请求体预览（截取1000字符）: {payload_preview[:1000]}")
+            except Exception as log_err:
+                print(f"[WARNING] 请求体序列化失败: {log_err}")
             
             # 显示circulation和caseDefine信息
             if payload.get("circulation"):
@@ -401,7 +443,8 @@ class AutomationPlatformService:
         self,
         header_fields: List[Dict[str, Any]],
         test_case_info: Dict[str, Any],
-        circulation: List[Dict[str, Any]] = None
+        circulation: List[Dict[str, Any]] = None,
+        example_body: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """
         使用AI根据字段定义和测试用例信息生成测试数据(body)
@@ -440,6 +483,14 @@ class AutomationPlatformService:
                 fields_desc.append(field_info)
             
             fields_text = "\n".join(fields_desc)
+
+            example_block = ""
+            if example_body:
+                try:
+                    import json as _json
+                    example_block = "\n【示例body（供参考）】\n" + _json.dumps(example_body, ensure_ascii=False, indent=2)
+                except Exception:
+                    example_block = ""
             
             # 准备环节信息
             circulation_text = ""
@@ -461,7 +512,7 @@ class AutomationPlatformService:
 {circulation_text}
 
 【字段定义】
-{fields_text}
+{fields_text}{example_block}
 
 【要求】
 1. 根据测试用例的具体内容，生成符合字段要求的测试数据
@@ -498,29 +549,39 @@ class AutomationPlatformService:
             response_str = str(response)
             
             print(f"[DEBUG] ========== AI Response 开始 ==========")
-            print(response_str[:1000] if len(response_str) > 1000 else response_str)
-            if len(response_str) > 1000:
-                print(f"[DEBUG] ... (响应内容过长，已截断，总长度: {len(response_str)} 字符)")
+            print(response_str)
+            print(f"[DEBUG] (AI Response 总长度: {len(response_str)} 字符)")
             print(f"[DEBUG] ========== AI Response 结束 ==========")
             
             # 解析AI返回的JSON
             import re
             
-            # 检查是否是 answer='...' 格式（AgentResponseFormat）
-            answer_match = re.search(r"answer='([\s\S]*?)'(?:\s|$)", response_str)
-            if answer_match:
-                json_str = answer_match.group(1)
-                # 处理转义字符
-                json_str = json_str.replace('\\n', '\n').replace("\\'", "'")
-                print(f"[DEBUG] 从answer字段提取JSON: {len(json_str)} 字符")
-            else:
-                # 提取JSON部分（去除markdown代码块标记）
+            json_str = None
+
+            # 优先取 detail='[...]'（常见Agent响应包含结构化JSON）
+            detail_match = re.search(r"detail='([\s\S]*?)'(?:\s|$)", response_str)
+            if detail_match:
+                candidate = detail_match.group(1).replace('\\n', '\n').replace("\\'", "'")
+                json_str = candidate
+                print(f"[DEBUG] 从detail字段提取JSON: {len(candidate)} 字符")
+
+            # 其次尝试 answer='...'（有时 answer 不是JSON，若detail可用则已覆盖）
+            if not json_str:
+                answer_match = re.search(r"answer='([\s\S]*?)'(?:\s|$)", response_str)
+                if answer_match:
+                    candidate = answer_match.group(1).replace('\\n', '\n').replace("\\'", "'")
+                    json_str = candidate
+                    print(f"[DEBUG] 从answer字段提取JSON: {len(candidate)} 字符")
+
+            # 再尝试 markdown 代码块
+            if not json_str:
                 json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response_str)
                 if json_match:
                     json_str = json_match.group(1)
-                else:
-                    # 尝试直接解析
-                    json_str = response_str.strip()
+
+            # 兜底直接整体解析
+            if not json_str:
+                json_str = response_str.strip()
             
             # 解析JSON
             body_data = json.loads(json_str)
@@ -654,38 +715,40 @@ class AutomationPlatformService:
         
         # 第四步：使用AI生成测试数据（body）
         print(f"[INFO] 步骤4: 使用AI根据测试用例信息生成测试数据")
+
+        # 提示词示例：从模板body取第一条，帮助AI理解格式
+        example_body = None
+        if case_detail and case_detail.get('caseDefine'):
+            template_body = case_detail['caseDefine'].get('body') or []
+            if template_body:
+                example_body = template_body[0]
+
         generated_body = []
         if header_fields and test_case_info:
             generated_body = self.generate_case_body_by_ai(
                 header_fields=header_fields,
                 test_case_info=test_case_info,
-                circulation=circulation
+                circulation=circulation,
+                example_body=example_body  # 传入示例，提升生成质量
             )
-            
+
             if generated_body:
-                # 将生成的body添加到case_detail中
                 if 'caseDefine' not in case_detail:
                     case_detail['caseDefine'] = {}
                 case_detail['caseDefine']['body'] = generated_body
                 print(f"[INFO] ✅ 已将AI生成的 {len(generated_body)} 条测试数据添加到caseDefine")
             else:
-                # ❌ AI未能生成测试数据，抛出异常，停止创建用例
-                print(f"[ERROR] ❌ AI未能生成测试数据")
                 raise Exception(
-                    "AI生成测试数据失败。测试数据是用例的必要组成部分，无法创建没有测试数据的用例。"
-                    "请检查：1) AI服务是否正常 2) 测试用例信息是否完整 3) 字段定义是否正确"
+                    "AI未生成测试数据，无法继续创建自动化用例。"
+                    "请检查：AI服务、header字段、测试用例信息是否完整。"
                 )
         else:
-            # 缺少必要信息，无法生成测试数据
-            print(f"[ERROR] ⚠️ 缺少必要信息，无法生成测试数据")
             if not header_fields:
-                print(f"[ERROR] 缺少header字段定义")
+                print(f"[ERROR] 缺少header字段定义，无法生成测试数据")
             if not test_case_info:
-                print(f"[ERROR] 缺少测试用例信息")
+                print(f"[ERROR] 缺少测试用例信息，无法生成测试数据")
             raise Exception(
-                "缺少生成测试数据的必要信息。"
-                f"header字段: {'有' if header_fields else '缺失'}, "
-                f"测试用例信息: {'有' if test_case_info else '缺失'}"
+                "缺少生成测试数据的必要信息，无法创建自动化用例。"
             )
         
         # 第五步：一次性创建用例和明细
@@ -770,4 +833,3 @@ def get_automation_service(db=None) -> Optional[AutomationPlatformService]:
 
 
 automation_service = get_automation_service()  # 全局实例（无db）
-

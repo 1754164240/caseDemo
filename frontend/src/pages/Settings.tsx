@@ -46,7 +46,6 @@ export default function Settings() {
       const automationResponse = await systemConfigAPI.getAutomationPlatformConfig()
       automationForm.setFieldsValue({
         api_base: automationResponse.data.api_base,
-        module_id: automationResponse.data.module_id,
       })
 
       // 加载 Prompt 配置
@@ -108,7 +107,6 @@ export default function Settings() {
     try {
       await systemConfigAPI.updateAutomationPlatformConfig({
         api_base: values.api_base || '',
-        module_id: values.module_id || '',
       })
       message.success('自动化测试平台配置保存成功')
     } catch (error: any) {
@@ -297,20 +295,10 @@ export default function Settings() {
                 name="api_base"
                 label="自动化测试平台 API 地址"
                 rules={[{ required: true, message: '请输入自动化测试平台 API 地址' }]}
-                extra="用于与第三方自动化测试平台对接的基础 API 地址，例如：http://autotest.example.com"
+                extra="用于与第三方自动化测试平台对接的基础 API 地址，例如：https://autotest.example.com/api"
               >
-                <Input placeholder="http://autotest.example.com" />
+                <Input placeholder="https://autotest.example.com/api" />
               </Form.Item>
-              
-              <Form.Item
-                name="module_id"
-                label="默认模块ID"
-                rules={[{ required: false }]}
-                extra="自动化测试平台的默认模块ID（UUID格式），配置后生成自动化用例时会自动填充。例如：a7f94755-b7c6-42ba-ba12-9026d9760cf5"
-              >
-                <Input placeholder="a7f94755-b7c6-42ba-ba12-9026d9760cf5" />
-              </Form.Item>
-              
               <Form.Item>
                 <Button type="primary" htmlType="submit" loading={loading}>
                   保存配置
