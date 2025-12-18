@@ -445,7 +445,7 @@ class AutomationPlatformService:
             circulation_text = ""
             if circulation:
                 circ_items = [f"- {c.get('name', '')} ({c.get('vargroup', '')})" for c in circulation]
-                circulation_text = "\n环节信息：\n" + "\n".join(circ_items)
+                circulation_text = "\n循环字段信息：\n" + "\n".join(circ_items)
             
             # 构建AI提示词
             prompt = f"""你是一个自动化测试专家。请根据以下测试用例信息和字段定义，生成1-3条合理的测试数据。
@@ -494,22 +494,33 @@ class AutomationPlatformService:
             # 调用AI
             response = ai_service.agent_chat(prompt)
             
+            # 转换为字符串（可能返回的是AgentResponseFormat等复杂对象）
+            response_str = str(response)
+            
             print(f"[DEBUG] ========== AI Response 开始 ==========")
-            print(response[:1000] if len(response) > 1000 else response)
-            if len(response) > 1000:
-                print(f"[DEBUG] ... (响应内容过长，已截断，总长度: {len(response)} 字符)")
+            print(response_str[:1000] if len(response_str) > 1000 else response_str)
+            if len(response_str) > 1000:
+                print(f"[DEBUG] ... (响应内容过长，已截断，总长度: {len(response_str)} 字符)")
             print(f"[DEBUG] ========== AI Response 结束 ==========")
             
             # 解析AI返回的JSON
             import re
             
-            # 提取JSON部分（去除markdown代码块标记）
-            json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response)
-            if json_match:
-                json_str = json_match.group(1)
+            # 检查是否是 answer='...' 格式（AgentResponseFormat）
+            answer_match = re.search(r"answer='([\s\S]*?)'(?:\s|$)", response_str)
+            if answer_match:
+                json_str = answer_match.group(1)
+                # 处理转义字符
+                json_str = json_str.replace('\\n', '\n').replace("\\'", "'")
+                print(f"[DEBUG] 从answer字段提取JSON: {len(json_str)} 字符")
             else:
-                # 尝试直接解析
-                json_str = response.strip()
+                # 提取JSON部分（去除markdown代码块标记）
+                json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response_str)
+                if json_match:
+                    json_str = json_match.group(1)
+                else:
+                    # 尝试直接解析
+                    json_str = response_str.strip()
             
             # 解析JSON
             body_data = json.loads(json_str)
@@ -537,9 +548,14 @@ class AutomationPlatformService:
         except json.JSONDecodeError as e:
             print(f"[ERROR] 解析AI返回的JSON失败: {e}")
             try:
-                print(f"[DEBUG] AI返回内容: {response[:500] if 'response' in locals() else '(response未定义)'}")
-            except:
-                print(f"[DEBUG] 无法打印AI返回内容")
+                if 'response_str' in locals():
+                    print(f"[DEBUG] AI返回内容: {response_str[:500]}")
+                elif 'response' in locals():
+                    print(f"[DEBUG] AI返回内容: {str(response)[:500]}")
+                else:
+                    print(f"[DEBUG] response未定义")
+            except Exception as ex:
+                print(f"[DEBUG] 无法打印AI返回内容: {ex}")
             return []
         except Exception as e:
             print(f"[ERROR] AI生成测试数据失败: {type(e).__name__}: {e}")
@@ -653,16 +669,24 @@ class AutomationPlatformService:
                 case_detail['caseDefine']['body'] = generated_body
                 print(f"[INFO] ✅ 已将AI生成的 {len(generated_body)} 条测试数据添加到caseDefine")
             else:
-                print(f"[WARNING] ⚠️ AI未能生成测试数据，将使用空body")
-                # 确保body为空列表
-                if 'caseDefine' in case_detail:
-                    case_detail['caseDefine']['body'] = []
+                # ❌ AI未能生成测试数据，抛出异常，停止创建用例
+                print(f"[ERROR] ❌ AI未能生成测试数据")
+                raise Exception(
+                    "AI生成测试数据失败。测试数据是用例的必要组成部分，无法创建没有测试数据的用例。"
+                    "请检查：1) AI服务是否正常 2) 测试用例信息是否完整 3) 字段定义是否正确"
+                )
         else:
-            print(f"[WARNING] ⚠️ 缺少必要信息，无法生成测试数据")
+            # 缺少必要信息，无法生成测试数据
+            print(f"[ERROR] ⚠️ 缺少必要信息，无法生成测试数据")
             if not header_fields:
-                print(f"[WARNING] 缺少header字段定义")
+                print(f"[ERROR] 缺少header字段定义")
             if not test_case_info:
-                print(f"[WARNING] 缺少测试用例信息")
+                print(f"[ERROR] 缺少测试用例信息")
+            raise Exception(
+                "缺少生成测试数据的必要信息。"
+                f"header字段: {'有' if header_fields else '缺失'}, "
+                f"测试用例信息: {'有' if test_case_info else '缺失'}"
+            )
         
         # 第五步：一次性创建用例和明细
         print(f"[INFO] 步骤5: 一次性创建用例和明细")

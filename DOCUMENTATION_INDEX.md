@@ -66,7 +66,17 @@
   - 常见问题解决
   - 快速测试命令
 
-- **[StructuredTool调用错误修复](./FIX_STRUCTURED_TOOL_CALL.md)** 🐛 ⭐ 最新
+- **[空Body和响应格式修复](./FIX_EMPTY_BODY_AND_RESPONSE_FORMAT.md)** 🐛 ⭐ 最新
+  - 修复AI响应 answer='...' 格式解析
+  - Body为空时快速失败机制
+  - 完整性保证和故障排查指南
+
+- **[AgentResponseFormat类型错误修复](./FIX_AGENT_RESPONSE_TYPE.md)** 🐛
+  - 修复 "object of type 'AgentResponseFormat' has no len()" 错误
+  - 显式类型转换最佳实践
+  - 防御性编程和类型安全
+
+- **[StructuredTool调用错误修复](./FIX_STRUCTURED_TOOL_CALL.md)** 🐛
   - 修复 "StructuredTool object is not callable" 错误
   - LangChain工具的正确调用方式
   - Tool装饰器和invoke方法详解
@@ -142,7 +152,17 @@
 
 ### 版本发布
 
-- **[v1.3.6.2 StructuredTool调用错误修复](./FIX_STRUCTURED_TOOL_CALL.md)** 🐛 ⭐ 最新
+- **[v1.3.6.4 空Body和响应格式修复](./FIX_EMPTY_BODY_AND_RESPONSE_FORMAT.md)** 🐛 ⭐ 最新
+  - 支持解析 answer='...' 格式的AI响应
+  - 实现快速失败机制（Body为空时停止创建）
+  - 增强错误信息和排查指南
+
+- **[v1.3.6.3 AgentResponseFormat类型错误修复](./FIX_AGENT_RESPONSE_TYPE.md)** 🐛
+  - 修复AI响应对象类型导致的len()错误
+  - 显式转换响应为字符串
+  - 增强调试日志的异常处理
+
+- **[v1.3.6.2 StructuredTool调用错误修复](./FIX_STRUCTURED_TOOL_CALL.md)** 🐛
   - 修复LangChain工具装饰器导致的调用错误
   - 使用 `.invoke()` 方法正确调用StructuredTool
   - 详细的LangChain Tool调用方式说明
@@ -300,7 +320,22 @@ SCENARIO_MATCHING_GUIDE.md         ← 匹配规则和使用
 
 ## 🆕 最新更新
 
-**v1.3.6.2** (2024-12-18) 🐛 ⭐ 最新
+**v1.3.6.4** (2024-12-18) 🐛 ⭐ 最新
+- 🔧 **修复AI响应格式解析**：支持 `answer='...'` 格式的AgentResponseFormat
+- ❌ **Body为空时快速失败**：AI未能生成测试数据时停止创建用例，避免不完整数据
+- 📝 **增强错误信息**：提供详细的排查指南和失败原因
+- ✅ **完整性保证**：确保创建的用例都包含有效的测试数据
+
+查看 [空Body和响应格式修复文档](./FIX_EMPTY_BODY_AND_RESPONSE_FORMAT.md) 了解详情。
+
+**v1.3.6.3** (2024-12-18) 🐛
+- 🔧 **修复AgentResponseFormat类型错误**：修复 "object of type 'AgentResponseFormat' has no len()" 错误
+- 📝 **显式类型转换**：在使用AI响应前显式转换为字符串
+- ✅ **防御性编程**：增强异常处理，避免调试代码导致崩溃
+
+查看 [AgentResponseFormat类型错误修复文档](./FIX_AGENT_RESPONSE_TYPE.md) 了解详情。
+
+**v1.3.6.2** (2024-12-18) 🐛
 - 🔧 **修复StructuredTool调用错误**：修复 "StructuredTool object is not callable" 错误
 - 📚 **LangChain工具调用**：正确使用 `.invoke()` 方法调用装饰器包装的工具
 - ✅ **时间上下文获取**：修复AI服务中时间工具的调用方式
@@ -473,13 +508,13 @@ SCENARIO_MATCHING_GUIDE.md         ← 匹配规则和使用
 | 数据结构 | 1 | 用例数据结构说明 |
 | 配置文档 | 3 | 环境配置 + 界面配置 + 数据库配置 |
 | 部署文档 | 1 | 部署指南 |
-| 故障排除 | 5 | 完整指南 + 快速修复 + caseDefine修复 + JSON导入修复 + Tool调用修复 |
-| 版本说明 | 12 | v1.2 ~ v1.3.6.2 |
-| **总计** | **30** | **完整文档体系** |
+| 故障排除 | 7 | 完整指南 + 快速修复 + caseDefine + JSON导入 + Tool调用 + 响应类型 + Body为空 |
+| 版本说明 | 14 | v1.2 ~ v1.3.6.4 |
+| **总计** | **32** | **完整文档体系** |
 
 ---
 
-**文档版本**：v1.3.6.2  
+**文档版本**：v1.3.6.4  
 **最后更新**：2024-12-18  
 **维护者**：开发团队
 
