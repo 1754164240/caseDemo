@@ -8,13 +8,23 @@ from app.core.config import settings
 class AutomationPlatformService:
     """自动化测试平台服务类"""
     
-    def __init__(self):
-        self.base_url = settings.AUTOMATION_PLATFORM_API_BASE
+    def __init__(self, base_url: str, db=None):
+        """
+        初始化自动化平台服务
+        
+        Args:
+            base_url: 自动化平台API基础地址
+            db: 数据库会话，用于AI服务读取配置
+        """
+        self.base_url = base_url
         if not self.base_url:
             raise ValueError("AUTOMATION_PLATFORM_API_BASE 未配置")
         
         # 移除末尾的斜杠
         self.base_url = self.base_url.rstrip('/')
+        
+        # 保存数据库连接，用于AI服务
+        self.db = db
     
     def create_case(
         self,
@@ -172,7 +182,25 @@ class AutomationPlatformService:
             
             # 尝试解析JSON
             try:
-                return response.json()
+                result = response.json()
+                
+                # 返回 data 部分，这才是真正的用例详情
+                if result.get('success') and result.get('data'):
+                    case_data = result.get('data')
+                    
+                    # 打印关键信息以便调试
+                    if case_data.get('caseDefine'):
+                        case_define = case_data['caseDefine']
+                        header_count = len(case_define.get('header', []))
+                        body_count = len(case_define.get('body', []))
+                        print(f"[INFO] 用例详情包含 caseDefine: header={header_count}个字段, body={body_count}条数据")
+                    else:
+                        print(f"[WARNING] 用例详情中没有 caseDefine")
+                    
+                    return case_data
+                else:
+                    raise Exception(f"获取用例详情失败: {result.get('message', '未知错误')}")
+                    
             except ValueError as json_error:
                 raise Exception(
                     f"API返回的不是有效的JSON格式。"
@@ -207,7 +235,8 @@ class AutomationPlatformService:
         try:
             from app.services.ai_service import get_ai_service
             
-            ai_service = get_ai_service()
+            # 传入db以读取数据库配置
+            ai_service = get_ai_service(self.db)
             if not ai_service:
                 print("[WARNING] AI服务不可用，使用第一个用例")
                 return available_cases[0] if available_cases else None
@@ -320,7 +349,10 @@ class AutomationPlatformService:
             # 日志显示结构信息
             header_count = len(case_define.get("header", [])) if case_define.get("header") else 0
             body_count = len(case_define.get("body", [])) if case_define.get("body") else 0
-            print(f"[INFO] caseDefine 包含 {header_count} 个字段(header), {body_count} 个测试数据(body)")
+            print(f"[INFO] ✅ caseDefine 已添加: {header_count} 个字段(header), {body_count} 个测试数据(body)")
+        else:
+            print(f"[WARNING] ⚠️ template_case_detail 中没有 caseDefine 信息")
+            print(f"[DEBUG] template_case_detail keys: {list(template_case_detail.keys()) if template_case_detail else 'None'}")
         
         try:
             print(f"[INFO] 调用自动化平台创建用例和明细")
@@ -364,6 +396,156 @@ class AutomationPlatformService:
             raise Exception(f"HTTP错误 {response.status_code}: {response.text[:200]}")
         except requests.RequestException as e:
             raise Exception(f"创建用例和明细失败: {str(e)}")
+    
+    def generate_case_body_by_ai(
+        self,
+        header_fields: List[Dict[str, Any]],
+        test_case_info: Dict[str, Any],
+        circulation: List[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        使用AI根据字段定义和测试用例信息生成测试数据(body)
+        
+        Args:
+            header_fields: 字段定义列表（header）
+            test_case_info: 测试用例信息
+            circulation: 环节信息
+            
+        Returns:
+            生成的测试数据列表（body格式）
+        """
+        try:
+            from app.services.ai_service import get_ai_service
+            
+            # 传入db以读取数据库配置
+            ai_service = get_ai_service(self.db)
+            if not ai_service:
+                print("[WARNING] AI服务不可用，返回空body")
+                return []
+            
+            # 准备字段信息描述
+            fields_desc = []
+            for field in header_fields:
+                row_name = field.get('rowName', field.get('row', ''))
+                row = field.get('row', '')
+                field_type = field.get('type', '')
+                flag = field.get('flag', '')
+                
+                field_info = f"- {row_name} (字段名: {row}"
+                if field_type:
+                    field_info += f", 类型: {field_type}"
+                if flag:
+                    field_info += f", 标识: {flag}"
+                field_info += ")"
+                fields_desc.append(field_info)
+            
+            fields_text = "\n".join(fields_desc)
+            
+            # 准备环节信息
+            circulation_text = ""
+            if circulation:
+                circ_items = [f"- {c.get('name', '')} ({c.get('vargroup', '')})" for c in circulation]
+                circulation_text = "\n环节信息：\n" + "\n".join(circ_items)
+            
+            # 构建AI提示词
+            prompt = f"""你是一个自动化测试专家。请根据以下测试用例信息和字段定义，生成1-3条合理的测试数据。
+
+【测试用例信息】
+标题：{test_case_info.get('title', '')}
+描述：{test_case_info.get('description', '')}
+前置条件：{test_case_info.get('preconditions', '')}
+测试步骤：{test_case_info.get('test_steps', '')}
+预期结果：{test_case_info.get('expected_result', '')}
+测试类型：{test_case_info.get('test_type', '')}
+优先级：{test_case_info.get('priority', '')}
+{circulation_text}
+
+【字段定义】
+{fields_text}
+
+【要求】
+1. 根据测试用例的具体内容，生成符合字段要求的测试数据
+2. 测试数据要真实、合理、符合业务逻辑
+3. 生成1-3条测试数据，每条数据包含一个用例描述(casedesc)和所有字段的值(var)
+4. 字段值要符合字段类型和业务含义
+5. 如果字段以 _1, _2 结尾，表示可能有多个同类字段，注意区分
+6. 日期格式使用 YYYYMMDD (如：20250120)
+7. 代码类字段要使用正确的业务代码
+
+请以JSON格式返回，格式如下：
+[
+    {{
+        "casedesc": "测试数据描述",
+        "var": {{
+            "字段名1": "值1",
+            "字段名2": "值2",
+            ...
+        }}
+    }}
+]
+
+只返回JSON数组，不要其他说明文字。"""
+            
+            print(f"[INFO] 调用AI生成测试数据（基于{len(header_fields)}个字段）")
+            print(f"[DEBUG] ========== AI Prompt 开始 ==========")
+            print(prompt)
+            print(f"[DEBUG] ========== AI Prompt 结束 ==========")
+            
+            # 调用AI
+            response = ai_service.agent_chat(prompt)
+            
+            print(f"[DEBUG] ========== AI Response 开始 ==========")
+            print(response[:1000] if len(response) > 1000 else response)
+            if len(response) > 1000:
+                print(f"[DEBUG] ... (响应内容过长，已截断，总长度: {len(response)} 字符)")
+            print(f"[DEBUG] ========== AI Response 结束 ==========")
+            
+            # 解析AI返回的JSON
+            import re
+            
+            # 提取JSON部分（去除markdown代码块标记）
+            json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                # 尝试直接解析
+                json_str = response.strip()
+            
+            # 解析JSON
+            body_data = json.loads(json_str)
+            
+            if not isinstance(body_data, list):
+                body_data = [body_data]
+            
+            print(f"[INFO] ✅ AI生成了 {len(body_data)} 条测试数据")
+            
+            # 转换为完整的body格式
+            result_body = []
+            for idx, item in enumerate(body_data, start=1):
+                body_item = {
+                    "casezf": "1",
+                    "casedesc": item.get("casedesc", f"测试数据{idx}"),
+                    "var": item.get("var", {}),
+                    "hoperesult": "成功结案",
+                    "iscaserun": False,
+                    "caseBodySN": idx
+                }
+                result_body.append(body_item)
+            
+            return result_body
+            
+        except json.JSONDecodeError as e:
+            print(f"[ERROR] 解析AI返回的JSON失败: {e}")
+            try:
+                print(f"[DEBUG] AI返回内容: {response[:500] if 'response' in locals() else '(response未定义)'}")
+            except:
+                print(f"[DEBUG] 无法打印AI返回内容")
+            return []
+        except Exception as e:
+            print(f"[ERROR] AI生成测试数据失败: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
     
     def create_case_with_fields(
         self,
@@ -423,12 +605,25 @@ class AutomationPlatformService:
         print(f"[INFO] 步骤3: 获取用例详情")
         case_detail = self.get_case_detail(selected_usercase_id)
         
+        # 调试：打印获取到的case_detail结构
+        if case_detail:
+            print(f"[DEBUG] case_detail keys: {list(case_detail.keys())}")
+            if 'caseDefine' in case_detail:
+                case_define = case_detail['caseDefine']
+                print(f"[DEBUG] caseDefine存在: header={len(case_define.get('header', []))}, body={len(case_define.get('body', []))}")
+            else:
+                print(f"[WARNING] case_detail中没有caseDefine字段")
+        else:
+            print(f"[ERROR] case_detail为空")
+        
         # 从用例详情中提取字段信息
         fields_data = None
+        header_fields = []
         if case_detail:
             if 'caseDefine' in case_detail:
                 case_define = case_detail.get('caseDefine', {})
-                fields_data = case_define.get('header', [])
+                header_fields = case_define.get('header', [])
+                fields_data = header_fields
         
         # 从模板中提取circulation信息
         circulation = selected_case.get('circulation', [])
@@ -441,8 +636,36 @@ class AutomationPlatformService:
         
         tags = json.dumps(tags_data, ensure_ascii=False) if tags_data else "[]"
         
-        # 第四步：一次性创建用例和明细
-        print(f"[INFO] 步骤4: 一次性创建用例和明细")
+        # 第四步：使用AI生成测试数据（body）
+        print(f"[INFO] 步骤4: 使用AI根据测试用例信息生成测试数据")
+        generated_body = []
+        if header_fields and test_case_info:
+            generated_body = self.generate_case_body_by_ai(
+                header_fields=header_fields,
+                test_case_info=test_case_info,
+                circulation=circulation
+            )
+            
+            if generated_body:
+                # 将生成的body添加到case_detail中
+                if 'caseDefine' not in case_detail:
+                    case_detail['caseDefine'] = {}
+                case_detail['caseDefine']['body'] = generated_body
+                print(f"[INFO] ✅ 已将AI生成的 {len(generated_body)} 条测试数据添加到caseDefine")
+            else:
+                print(f"[WARNING] ⚠️ AI未能生成测试数据，将使用空body")
+                # 确保body为空列表
+                if 'caseDefine' in case_detail:
+                    case_detail['caseDefine']['body'] = []
+        else:
+            print(f"[WARNING] ⚠️ 缺少必要信息，无法生成测试数据")
+            if not header_fields:
+                print(f"[WARNING] 缺少header字段定义")
+            if not test_case_info:
+                print(f"[WARNING] 缺少测试用例信息")
+        
+        # 第五步：一次性创建用例和明细
+        print(f"[INFO] 步骤5: 一次性创建用例和明细")
         print(f"[INFO] 使用模板的circulation信息: {circulation}")
         
         case_data = self.create_case_and_body(
@@ -480,18 +703,47 @@ class AutomationPlatformService:
         }
 
 
-# 全局实例
-def get_automation_service() -> Optional[AutomationPlatformService]:
-    """获取自动化平台服务实例"""
+# 全局实例（用于不需要数据库配置的场景）
+def get_automation_service(db=None) -> Optional[AutomationPlatformService]:
+    """
+    获取自动化平台服务实例
+    
+    Args:
+        db: 数据库会话，传入后AI服务可读取数据库配置，同时可从数据库读取API地址
+        
+    Returns:
+        AutomationPlatformService 实例
+    """
     try:
-        if not settings.AUTOMATION_PLATFORM_API_BASE:
-            print("[WARNING] 自动化平台 API 地址未配置")
+        # 优先从数据库读取配置
+        api_base = None
+        if db:
+            try:
+                from app.models.system_config import SystemConfig
+                config = db.query(SystemConfig).filter(
+                    SystemConfig.config_key == "AUTOMATION_PLATFORM_API_BASE"
+                ).first()
+                if config and config.config_value:
+                    api_base = config.config_value
+                    print(f"[INFO] 从数据库读取自动化平台API地址: {api_base}")
+            except Exception as e:
+                print(f"[WARNING] 从数据库读取自动化平台配置失败: {e}")
+        
+        # 回退到环境变量
+        if not api_base:
+            api_base = settings.AUTOMATION_PLATFORM_API_BASE
+            if api_base:
+                print(f"[INFO] 从环境变量读取自动化平台API地址: {api_base}")
+        
+        if not api_base:
+            print("[WARNING] 自动化平台 API 地址未配置（数据库和环境变量都未找到）")
             return None
-        return AutomationPlatformService()
+            
+        return AutomationPlatformService(base_url=api_base, db=db)
     except Exception as e:
         print(f"[WARNING] 初始化自动化平台服务失败: {e}")
         return None
 
 
-automation_service = get_automation_service()
+automation_service = get_automation_service()  # 全局实例（无db）
 

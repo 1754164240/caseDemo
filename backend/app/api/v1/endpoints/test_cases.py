@@ -22,7 +22,7 @@ from app.schemas.common import PaginatedResponse
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.services.document_parser import DocumentParser
-from app.services.automation_service import automation_service
+from app.services.automation_service import get_automation_service
 
 router = APIRouter()
 
@@ -624,7 +624,8 @@ def generate_automation_case(
     参数:
     - module_id: 模块ID，可选。如果不传，则从系统配置中读取
     """
-    # 检查自动化服务是否可用
+    # 获取自动化服务实例（传入db以读取数据库配置）
+    automation_service = get_automation_service(db)
     if not automation_service:
         raise HTTPException(
             status_code=503,
@@ -654,27 +655,78 @@ def generate_automation_case(
     if not test_case:
         raise HTTPException(status_code=404, detail="测试用例不存在")
     
-    # 1. 匹配场景
+    # 1. 匹配场景（使用AI智能选择）
     test_point = test_case.test_point
     business_line = test_point.business_line
     
+    # 获取所有激活的场景
     scenarios_query = db.query(Scenario).filter(Scenario.is_active == True)
+    
+    # 优先筛选业务线匹配的场景
     if business_line:
-        scenarios_query = scenarios_query.filter(Scenario.business_line == business_line)
+        filtered_scenarios = scenarios_query.filter(Scenario.business_line == business_line).all()
+        if not filtered_scenarios:
+            # 如果业务线没有匹配的场景，获取所有场景
+            filtered_scenarios = scenarios_query.all()
+    else:
+        filtered_scenarios = scenarios_query.all()
     
-    scenarios = scenarios_query.all()
-    
-    if not scenarios:
-        scenarios = db.query(Scenario).filter(Scenario.is_active == True).all()
-    
-    if not scenarios:
+    if not filtered_scenarios:
         raise HTTPException(
             status_code=404,
             detail="未找到可用的场景，请先在场景管理中创建场景"
         )
     
-    # 简单匹配：选择第一个匹配的场景
-    matched_scenario = scenarios[0]
+    # 将场景对象转换为字典列表供AI分析
+    scenarios_for_ai = []
+    for scenario in filtered_scenarios:
+        scenarios_for_ai.append({
+            'id': scenario.id,
+            'scenario_code': scenario.scenario_code,
+            'name': scenario.name,
+            'description': scenario.description,
+            'business_line': scenario.business_line,
+            'channel': scenario.channel,
+            'module': scenario.module
+        })
+    
+    # 准备测试用例信息
+    test_case_info_for_scenario = {
+        "title": test_case.title,
+        "description": test_case.description or "",
+        "preconditions": test_case.preconditions or "",
+        "test_steps": str(test_case.test_steps) if test_case.test_steps else "",
+        "expected_result": test_case.expected_result or "",
+        "test_type": test_case.test_type or "",
+        "business_line": business_line or "",
+        "priority": test_case.priority or ""
+    }
+    
+    # 使用AI选择最佳场景
+    from app.services.ai_service import get_ai_service
+    ai_service_instance = get_ai_service(db)  # 传入db以读取数据库配置
+    
+    selected_scenario_dict = ai_service_instance.select_best_scenario(
+        test_case_info_for_scenario,
+        scenarios_for_ai
+    )
+    
+    if not selected_scenario_dict:
+        raise HTTPException(
+            status_code=500,
+            detail="AI场景匹配失败"
+        )
+    
+    # 根据AI选择的结果找到对应的数据库对象
+    matched_scenario = db.query(Scenario).filter(
+        Scenario.id == selected_scenario_dict['id']
+    ).first()
+    
+    if not matched_scenario:
+        raise HTTPException(
+            status_code=500,
+            detail="未找到AI选择的场景"
+        )
     
     # 2. 调用自动化平台创建用例
     try:

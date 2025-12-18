@@ -138,11 +138,13 @@ class AIService:
                 print(f"[WARNING] 从数据库获取模型配置失败: {e}")
 
         # 回退到环境变量配置
+        # 从settings读取temperature配置，如果没有则使用1.0
+        default_temp = getattr(settings, 'AI_TEMPERATURE', 1.0)
         return {
             "api_key": settings.OPENAI_API_KEY,
             "api_base": settings.OPENAI_API_BASE,
             "model_name": settings.MODEL_NAME,
-            "temperature": "0.7",
+            "temperature": str(default_temp),
             "max_tokens": None,
             "provider": None,
         }
@@ -187,8 +189,9 @@ class AIService:
         keywords = ["date", "time", "today", "now", "日期", "时间", "今天", "几点", "几号"]
         if any(k in lower for k in keywords):
             # 优先返回带时间的上下文，提示来自工具
-            current_dt = current_datetime_tool()
-            current_d = current_date_tool()
+            # StructuredTool 需要使用 .invoke() 方法调用
+            current_dt = current_datetime_tool.invoke({})
+            current_d = current_date_tool.invoke({})
             return f"当前日期（东八区）：{current_d}，当前时间（东八区）：{current_dt}。"
         return ""
         
@@ -502,6 +505,92 @@ class AIService:
         workflow.add_edge("generate", END)
 
         return workflow.compile()
+    
+    def select_best_scenario(
+        self,
+        test_case_info: Dict[str, Any],
+        scenarios: List[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        使用AI选择最匹配的场景
+        
+        Args:
+            test_case_info: 测试用例信息（标题、描述、业务线等）
+            scenarios: 可用的场景列表
+            
+        Returns:
+            选中的场景对象，如果没有合适的返回None
+        """
+        if not scenarios:
+            return None
+        
+        if len(scenarios) == 1:
+            return scenarios[0]
+        
+        try:
+            import json
+            
+            # 构建场景列表用于AI分析
+            scenarios_for_ai = []
+            for idx, s in enumerate(scenarios):
+                scenario_info = {
+                    'index': idx,
+                    'id': s.get('id'),
+                    'scenario_code': str(s.get('scenario_code', '')),
+                    'name': str(s.get('name', '')),
+                    'description': str(s.get('description', '')),
+                    'business_line': str(s.get('business_line', '')),
+                    'channel': str(s.get('channel', '')),
+                    'module': str(s.get('module', ''))
+                }
+                scenarios_for_ai.append(scenario_info)
+            
+            # 准备prompt
+            prompt = f"""你是一个测试专家。我需要为以下测试用例选择最匹配的业务场景。
+
+测试用例信息：
+- 标题：{test_case_info.get('title', '')}
+- 描述：{test_case_info.get('description', '')}
+- 前置条件：{test_case_info.get('preconditions', '')}
+- 测试步骤：{test_case_info.get('test_steps', '')}
+- 预期结果：{test_case_info.get('expected_result', '')}
+- 测试类型：{test_case_info.get('test_type', '')}
+- 业务线：{test_case_info.get('business_line', '')}
+
+可选的业务场景：
+{json.dumps(scenarios_for_ai, ensure_ascii=False, indent=2)}
+
+请分析测试用例的内容和业务背景，选择最匹配的业务场景。
+考虑因素：
+1. 业务线是否匹配
+2. 场景名称和描述是否与测试内容相关
+3. 渠道和模块是否对应
+
+只需要返回选中的 scenario_code，不要返回其他内容。
+如果没有特别匹配的，返回第一个场景的 scenario_code。"""
+
+            print(f"[INFO] 使用AI选择最佳场景...")
+            print(f"[DEBUG] 可选场景数量: {len(scenarios)}")
+            
+            response = self.llm.invoke(prompt)
+            
+            selected_code = response.content.strip()
+            print(f"[INFO] AI选择的场景编号: {selected_code}")
+            
+            # 查找匹配的场景
+            for s in scenarios:
+                if str(s.get('scenario_code', '')) == selected_code:
+                    print(f"[INFO] 找到匹配的场景: {s.get('name', '')}")
+                    return s
+            
+            print(f"[WARNING] AI返回的场景编号无效，使用第一个场景")
+            return scenarios[0]
+                
+        except Exception as e:
+            print(f"[ERROR] AI选择场景失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return scenarios[0]
 
 
 # 全局实例（用于不需要 Prompt 配置的场景）

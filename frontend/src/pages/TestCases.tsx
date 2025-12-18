@@ -355,9 +355,15 @@ export default function TestCases() {
                 <Descriptions.Item label="测试用例">
                   {result.data.test_case.code} - {result.data.test_case.title}
                 </Descriptions.Item>
-                <Descriptions.Item label="匹配场景">
-                  <Tag color="blue">{result.data.matched_scenario.scenario_code}</Tag>
-                  {result.data.matched_scenario.name}
+                <Descriptions.Item label="🤖 AI匹配的场景">
+                  <div>
+                    <Tag color="blue" style={{ fontSize: 13 }}>
+                      {result.data.matched_scenario.scenario_code}
+                    </Tag>
+                    <span style={{ marginLeft: 8, fontWeight: 'bold' }}>
+                      {result.data.matched_scenario.name}
+                    </span>
+                  </div>
                 </Descriptions.Item>
                 <Descriptions.Item label="场景ID">
                   <Tag color="cyan">{result.data.scene_id}</Tag>
@@ -468,11 +474,12 @@ export default function TestCases() {
 
               <div style={{ marginTop: 16, padding: 12, background: '#e6f7ff', borderRadius: 4, borderLeft: '4px solid #1890ff' }}>
                 <div style={{ fontSize: 13, color: '#096dd9' }}>
-                  <strong>✨ 创建流程：</strong>
+                  <strong>✨ AI智能创建流程：</strong>
                   <div style={{ marginTop: 8, lineHeight: 1.8 }}>
-                    1️⃣ AI智能分析并选择最佳模板 <br />
-                    2️⃣ 获取模板的完整结构和字段配置 <br />
-                    3️⃣ 一次性创建用例和明细（包含所有字段）
+                    1️⃣ AI分析测试用例，智能匹配最佳业务场景 <br />
+                    2️⃣ AI从场景用例库中选择最佳模板 <br />
+                    3️⃣ 获取模板的完整结构和字段配置 <br />
+                    4️⃣ 一次性创建用例和明细（包含所有字段）
                   </div>
                 </div>
               </div>
