@@ -556,42 +556,66 @@ class AutomationPlatformService:
             # 解析AI返回的JSON
             import re
             
-            json_str = None
+            candidates = []
 
             # 优先取 detail='[...]'（常见Agent响应包含结构化JSON）
             detail_match = re.search(r"detail='([\s\S]*?)'(?:\s|$)", response_str)
             if detail_match:
                 candidate = detail_match.group(1).replace('\\n', '\n').replace("\\'", "'")
-                json_str = candidate
+                candidates.append(candidate)
                 print(f"[DEBUG] 从detail字段提取JSON: {len(candidate)} 字符")
 
             # 其次尝试 answer='...'（有时 answer 不是JSON，若detail可用则已覆盖）
-            if not json_str:
-                answer_match = re.search(r"answer='([\s\S]*?)'(?:\s|$)", response_str)
-                if answer_match:
-                    candidate = answer_match.group(1).replace('\\n', '\n').replace("\\'", "'")
-                    json_str = candidate
-                    print(f"[DEBUG] 从answer字段提取JSON: {len(candidate)} 字符")
+            answer_match = re.search(r"answer='([\s\S]*?)'(?:\s|$)", response_str)
+            if answer_match:
+                candidate = answer_match.group(1).replace('\\n', '\n').replace("\\'", "'")
+                candidates.append(candidate)
+                print(f"[DEBUG] 从answer字段提取JSON: {len(candidate)} 字符")
 
             # 再尝试 markdown 代码块
-            if not json_str:
-                json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response_str)
-                if json_match:
-                    json_str = json_match.group(1)
+            json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response_str)
+            if json_match:
+                candidates.append(json_match.group(1))
 
             # 兜底直接整体解析
-            if not json_str:
-                json_str = response_str.strip()
+            candidates.append(response_str.strip())
             
-            # 解析JSON
-            body_data = json.loads(json_str)
+            last_error = None
+            body_data = None
+
+            def _parse_candidate(raw: str):
+                raw = raw.strip()
+                if not raw:
+                    raise json.JSONDecodeError("空字符串", raw, 0)
+                try:
+                    return json.loads(raw)
+                except json.JSONDecodeError:
+                    start_idx = raw.find('[')
+                    end_idx = raw.rfind(']') + 1
+                    if start_idx != -1 and end_idx > start_idx:
+                        return json.loads(raw[start_idx:end_idx])
+                    start_idx = raw.find('{')
+                    end_idx = raw.rfind('}') + 1
+                    if start_idx != -1 and end_idx > start_idx:
+                        return json.loads(raw[start_idx:end_idx])
+                    raise
+
+            for candidate in candidates:
+                try:
+                    body_data = _parse_candidate(candidate)
+                    break
+                except json.JSONDecodeError as parse_error:
+                    last_error = parse_error
+                    continue
+
+            if body_data is None:
+                raise last_error or json.JSONDecodeError("没有可用的JSON字符串", "", 0)
             
             if not isinstance(body_data, list):
                 body_data = [body_data]
             
             print(f"[INFO] ✅ AI生成了 {len(body_data)} 条测试数据")
-            
-            # 转换为完整的body格式
+
             result_body = []
             for idx, item in enumerate(body_data, start=1):
                 body_item = {

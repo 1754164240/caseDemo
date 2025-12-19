@@ -447,3 +447,4 @@ assert payload["caseDefine"].get("header")
 **兼容性**: 需要自动化平台支持新API  
 **推荐**: 强烈推荐升级
 
+

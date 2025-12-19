@@ -378,3 +378,4 @@ WHERE config_key IN ('AUTOMATION_PLATFORM_API_BASE', 'AUTOMATION_PLATFORM_MODULE
 **版本**：v1.2.1  
 **变更类型**：功能增强
 
+
