@@ -542,11 +542,11 @@ class AutomationPlatformService:
             print(prompt)
             print(f"[DEBUG] ========== AI Prompt 结束 ==========")
             
-            # 调用AI
-            response = ai_service.agent_chat(prompt)
-            
-            # 转换为字符串（可能返回的是AgentResponseFormat等复杂对象）
-            response_str = str(response)
+            # 调用AI：这里直接调用 llm.invoke，避免 agent/tool_calls 返回 messages 结构导致无法解析JSON
+            response = ai_service.llm.invoke(prompt)
+            response_str = getattr(response, "content", None)
+            if response_str is None:
+                response_str = str(response)
             
             print(f"[DEBUG] ========== AI Response 开始 ==========")
             print(response_str)
@@ -587,18 +587,38 @@ class AutomationPlatformService:
                 raw = raw.strip()
                 if not raw:
                     raise json.JSONDecodeError("空字符串", raw, 0)
-                try:
-                    return json.loads(raw)
-                except json.JSONDecodeError:
-                    start_idx = raw.find('[')
-                    end_idx = raw.rfind(']') + 1
+                parse_targets = [raw]
+
+                if "\\n" in raw or "\\r\\n" in raw:
+                    normalized = raw.replace("\\r\\n", "\n").replace("\\n", "\n")
+                    if normalized not in parse_targets:
+                        parse_targets.append(normalized)
+
+                last_inner_error = None
+                for target in parse_targets:
+                    try:
+                        return json.loads(target)
+                    except json.JSONDecodeError as err:
+                        last_inner_error = err
+                        continue
+
+                for target in parse_targets:
+                    start_idx = target.find('[')
+                    end_idx = target.rfind(']') + 1
                     if start_idx != -1 and end_idx > start_idx:
-                        return json.loads(raw[start_idx:end_idx])
-                    start_idx = raw.find('{')
-                    end_idx = raw.rfind('}') + 1
+                        try:
+                            return json.loads(target[start_idx:end_idx])
+                        except json.JSONDecodeError as err:
+                            last_inner_error = err
+                    start_idx = target.find('{')
+                    end_idx = target.rfind('}') + 1
                     if start_idx != -1 and end_idx > start_idx:
-                        return json.loads(raw[start_idx:end_idx])
-                    raise
+                        try:
+                            return json.loads(target[start_idx:end_idx])
+                        except json.JSONDecodeError as err:
+                            last_inner_error = err
+
+                raise last_inner_error or json.JSONDecodeError("无法解析JSON字符串", raw, 0)
 
             for candidate in candidates:
                 try:
