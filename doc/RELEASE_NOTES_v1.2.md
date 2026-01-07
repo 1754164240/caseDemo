@@ -74,7 +74,7 @@
 
 - 📖 [完整集成文档](./AUTOMATION_PLATFORM_INTEGRATION.md)
 - 🚀 [快速开始指南](./AUTOMATION_QUICK_START.md)
-- ⚙️ [环境配置说明](./backend/ENVIRONMENT_SETUP.md)
+- ⚙️ [环境配置说明](../backend/ENVIRONMENT_SETUP.md)
 
 ## 🔄 API 变更
 
@@ -332,5 +332,8 @@ npm run test
 
 **上一版本**：v1.1 - 场景管理模块  
 **下一版本**：v1.3 - 智能匹配和批量操作（计划中）
+
+
+
 
 

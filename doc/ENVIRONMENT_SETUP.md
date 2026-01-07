@@ -314,8 +314,11 @@ systemctl restart backend
 
 ## 相关文档
 
-- [自动化平台集成说明](../AUTOMATION_PLATFORM_INTEGRATION.md)
-- [快速开始指南](../AUTOMATION_QUICK_START.md)
+- [自动化平台集成说明](../doc/AUTOMATION_PLATFORM_INTEGRATION.md)
+- [快速开始指南](../doc/AUTOMATION_QUICK_START.md)
 - [部署指南](./DEPLOY_SCENARIO.md)
+
+
+
 
 

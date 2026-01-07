@@ -91,7 +91,7 @@
   - API响应解析问题
   - 详细的调试步骤
   
-- **[环境配置说明](./backend/ENVIRONMENT_SETUP.md)** ⚙️
+- **[环境配置说明](../backend/ENVIRONMENT_SETUP.md)** ⚙️
   - 所有环境变量配置说明
   - 配置验证和故障排除
   - 安全建议
@@ -103,12 +103,12 @@
   - 前后端实现详解
   - 使用示例
 
-- **[场景模块API文档](./backend/SCENARIO_MODULE_README.md)** 🔌
+- **[场景模块API文档](../backend/SCENARIO_MODULE_README.md)** 🔌
   - RESTful API接口说明
   - 请求/响应示例
   - 错误代码说明
 
-- **[场景模块开发总结](./backend/SCENARIO_MODULE_SUMMARY.md)** 📋
+- **[场景模块开发总结](../backend/SCENARIO_MODULE_SUMMARY.md)** 📋
   - 开发历程和决策
   - 技术栈和架构
   - 最佳实践
@@ -120,7 +120,7 @@
   - 性能优化建议
   - 使用示例
 
-- **[后端分页实现](./backend/PAGINATION_IMPLEMENTATION.md)** 🔧
+- **[后端分页实现](../backend/PAGINATION_IMPLEMENTATION.md)** 🔧
   - SQLAlchemy分页实现
   - 统一响应格式
   - 性能优化
@@ -134,18 +134,18 @@
 
 ### 部署和维护
 
-- **[场景模块部署指南](./backend/DEPLOY_SCENARIO.md)** 🚢
+- **[场景模块部署指南](../backend/DEPLOY_SCENARIO.md)** 🚢
   - 部署步骤
   - 数据库迁移
   - 验证和测试
 
-- **[测试脚本](./backend/test_scenario_api.py)** 🧪
+- **[测试脚本](../backend/test_scenario_api.py)** 🧪
   - API自动化测试
   - 功能验证脚本
 
 ### 前端文档
 
-- **[场景管理前端使用](./frontend/SCENARIO_FRONTEND_README.md)** 💻
+- **[场景管理前端使用](../frontend/SCENARIO_FRONTEND_README.md)** 💻
   - 页面功能说明
   - 操作指南
   - UI组件使用
@@ -277,19 +277,19 @@ SCENARIO_MATCHING_GUIDE.md         ← 匹配规则和使用
 
 1. **[快速开始指南](./AUTOMATION_QUICK_START.md)** - 5分钟快速上手
 2. **[场景管理完整指南](./SCENARIO_COMPLETE_GUIDE.md)** - 了解核心功能
-3. **[环境配置说明](./backend/ENVIRONMENT_SETUP.md)** - 配置环境
+3. **[环境配置说明](../backend/ENVIRONMENT_SETUP.md)** - 配置环境
 
 ### 开发者
 
 1. **[集成说明文档](./AUTOMATION_PLATFORM_INTEGRATION.md)** - 技术实现
-2. **[场景模块API文档](./backend/SCENARIO_MODULE_README.md)** - API接口
+2. **[场景模块API文档](../backend/SCENARIO_MODULE_README.md)** - API接口
 3. **[分页实现指南](./PAGINATION_COMPLETE.md)** - 分页实现
-4. **[部署指南](./backend/DEPLOY_SCENARIO.md)** - 部署流程
+4. **[部署指南](../backend/DEPLOY_SCENARIO.md)** - 部署流程
 
 ### 运维人员
 
-1. **[环境配置说明](./backend/ENVIRONMENT_SETUP.md)** - 环境配置
-2. **[部署指南](./backend/DEPLOY_SCENARIO.md)** - 部署和维护
+1. **[环境配置说明](../backend/ENVIRONMENT_SETUP.md)** - 环境配置
+2. **[部署指南](../backend/DEPLOY_SCENARIO.md)** - 部署和维护
 3. **[v1.2 发布说明](./RELEASE_NOTES_v1.2.md)** - 版本更新
 
 ## 🔗 文档关系图
@@ -441,7 +441,7 @@ SCENARIO_MATCHING_GUIDE.md         ← 匹配规则和使用
 ### 按问题类型
 
 **如何配置？**
-→ [环境配置说明](./backend/ENVIRONMENT_SETUP.md)
+→ [环境配置说明](../backend/ENVIRONMENT_SETUP.md)
 
 **如何使用？**
 → [快速开始指南](./AUTOMATION_QUICK_START.md)
@@ -450,10 +450,10 @@ SCENARIO_MATCHING_GUIDE.md         ← 匹配规则和使用
 → [集成说明文档](./AUTOMATION_PLATFORM_INTEGRATION.md)
 
 **如何部署？**
-→ [部署指南](./backend/DEPLOY_SCENARIO.md)
+→ [部署指南](../backend/DEPLOY_SCENARIO.md)
 
 **API接口？**
-→ [API文档](./backend/SCENARIO_MODULE_README.md)
+→ [API文档](../backend/SCENARIO_MODULE_README.md)
 
 **遇到错误？**
 → [常见问题](./AUTOMATION_QUICK_START.md#-常见问题)
@@ -462,16 +462,16 @@ SCENARIO_MATCHING_GUIDE.md         ← 匹配规则和使用
 
 **后端 (Python/FastAPI)**
 - [集成说明文档](./AUTOMATION_PLATFORM_INTEGRATION.md) - 服务层实现
-- [分页实现](./backend/PAGINATION_IMPLEMENTATION.md) - 数据库查询
-- [配置说明](./backend/ENVIRONMENT_SETUP.md) - 配置管理
+- [分页实现](../backend/PAGINATION_IMPLEMENTATION.md) - 数据库查询
+- [配置说明](../backend/ENVIRONMENT_SETUP.md) - 配置管理
 
 **前端 (React/TypeScript)**
-- [场景前端使用](./frontend/SCENARIO_FRONTEND_README.md) - UI实现
+- [场景前端使用](../frontend/SCENARIO_FRONTEND_README.md) - UI实现
 - [集成说明](./AUTOMATION_PLATFORM_INTEGRATION.md#前端实现) - API调用
 
 **数据库 (SQLAlchemy)**
-- [场景模块总结](./backend/SCENARIO_MODULE_SUMMARY.md) - 模型设计
-- [部署指南](./backend/DEPLOY_SCENARIO.md) - 数据库迁移
+- [场景模块总结](../backend/SCENARIO_MODULE_SUMMARY.md) - 模型设计
+- [部署指南](../backend/DEPLOY_SCENARIO.md) - 数据库迁移
 
 ## 📝 文档贡献
 
@@ -495,7 +495,7 @@ SCENARIO_MATCHING_GUIDE.md         ← 匹配规则和使用
 
 1. **查看文档** - 大多数问题可以在文档中找到答案
 2. **常见问题** - [快速开始指南](./AUTOMATION_QUICK_START.md#-常见问题)
-3. **错误排查** - [环境配置说明](./backend/ENVIRONMENT_SETUP.md#故障排除)
+3. **错误排查** - [环境配置说明](../backend/ENVIRONMENT_SETUP.md#故障排除)
 4. **技术支持** - 联系开发团队
 
 ## 📊 文档统计
@@ -519,4 +519,3 @@ SCENARIO_MATCHING_GUIDE.md         ← 匹配规则和使用
 **维护者**：开发团队
 
 如有文档问题或建议，请联系技术支持。
-

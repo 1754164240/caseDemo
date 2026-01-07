@@ -498,7 +498,10 @@ AUTOMATION_PLATFORMS = {
 ## 相关文档
 
 - [场景管理模块说明](./SCENARIO_COMPLETE_GUIDE.md)
-- [API文档](./backend/SCENARIO_MODULE_README.md)
-- [后端配置说明](./backend/app/core/config.py)
+- [API文档](../backend/SCENARIO_MODULE_README.md)
+- [后端配置说明](../backend/app/core/config.py)
+
+
+
 
 

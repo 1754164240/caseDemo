@@ -314,7 +314,7 @@ python main.py
 
 - [AI配置从数据库读取详细说明](./AI_CONFIG_FROM_DATABASE.md)
 - [系统配置管理](./AUTOMATION_CONFIG_UPDATE.md)
-- [环境配置说明](./backend/ENVIRONMENT_SETUP.md)
+- [环境配置说明](../backend/ENVIRONMENT_SETUP.md)
 - [快速开始指南](./AUTOMATION_QUICK_START.md)
 
 ---
@@ -331,5 +331,8 @@ python main.py
 **版本**：v1.3.5  
 **发布日期**：2024-12-18  
 **下一版本预告**：更多AI功能优化
+
+
+
 
 

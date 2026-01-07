@@ -445,11 +445,14 @@ tail -f logs/app.log
 - [快速开始指南](./AUTOMATION_QUICK_START.md)
 - [集成说明文档](./AUTOMATION_PLATFORM_INTEGRATION.md)
 - [配置更新说明](./AUTOMATION_CONFIG_UPDATE.md)
-- [环境配置说明](./backend/ENVIRONMENT_SETUP.md)
+- [环境配置说明](../backend/ENVIRONMENT_SETUP.md)
 
 ---
 
 **最后更新**: 2024-12-16  
 **版本**: v1.2.1
+
+
+
 
 

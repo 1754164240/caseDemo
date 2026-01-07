@@ -85,6 +85,30 @@ npm run lint
 3. LLM 生成测试用例 (前置条件、步骤、预期结果)
 4. 保存到数据库并通知前端
 
+### 自动化平台集成
+
+**核心服务**: `backend/app/services/automation_service.py`
+
+**主要流程** (`create_case_with_fields`):
+1. `get_scene_cases(scene_id)` - 获取场景用例列表
+2. `select_best_case_by_ai()` - AI选择最匹配模板
+3. `get_case_detail(usercase_id)` - 获取模板详情（含header/body）
+4. `generate_case_body_by_ai()` - AI生成测试数据
+5. `create_case_and_body()` - 创建用例和明细
+
+**关键API端点**:
+- `POST /ai/case/createCaseAndBody` - 创建用例和明细
+- `GET /ai/case/queryCaseBody/{id}` - 获取用例详情
+- `GET /ai/case/queryBySceneId/{sceneId}` - 获取场景用例
+
+**caseDefine数据结构**:
+```python
+{
+    "header": [{"rowName", "row", "type", "flag"}],  # 字段定义
+    "body": [{"casedesc", "var": {...}}]             # 测试数据
+}
+```
+
 ### 模型配置系统
 
 系统支持**多模型配置管理**:
@@ -172,11 +196,15 @@ DATABASE_URL=postgresql+psycopg://testcase:testcase123@localhost:5432/test_case_
 # Milvus 向量数据库
 MILVUS_HOST=localhost
 MILVUS_PORT=19530
+
+# 自动化测试平台 API
+AUTOMATION_PLATFORM_API_BASE=http://localhost:8087
 ```
 
 **注意**:
 - 如果使用 Python 3.13,必须使用 `postgresql+psycopg://` 格式
 - API Key 默认不应提交到 Git,通过环境变量或数据库配置管理
+- 自动化平台API地址支持从数据库(`system_config`表)或环境变量读取
 
 ## 常见开发场景
 

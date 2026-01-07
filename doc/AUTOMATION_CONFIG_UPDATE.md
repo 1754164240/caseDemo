@@ -370,12 +370,15 @@ WHERE config_key IN ('AUTOMATION_PLATFORM_API_BASE', 'AUTOMATION_PLATFORM_MODULE
 遇到问题请参考：
 1. [快速开始指南](./AUTOMATION_QUICK_START.md)
 2. [完整集成文档](./AUTOMATION_PLATFORM_INTEGRATION.md)
-3. [环境配置说明](./backend/ENVIRONMENT_SETUP.md)
+3. [环境配置说明](../backend/ENVIRONMENT_SETUP.md)
 
 ---
 
 **更新日期**：2024-12-16  
 **版本**：v1.2.1  
 **变更类型**：功能增强
+
+
+
 
 
