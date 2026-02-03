@@ -224,68 +224,85 @@ class AutomationPlatformService:
     ) -> Optional[Dict[str, Any]]:
         """
         使用AI选择最匹配的用例
-        
+
         Args:
             test_case_info: 测试用例信息（标题、描述等）
             available_cases: 可用的用例列表
-            
+
         Returns:
             选中的用例（包含完整信息），如果没有合适的返回None
         """
         try:
             from app.services.ai_service import get_ai_service
-            
+            import asyncio
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
             # 传入db以读取数据库配置
             ai_service = get_ai_service(self.db)
             if not ai_service:
                 print("[WARNING] AI服务不可用，使用第一个用例")
                 return available_cases[0] if available_cases else None
-            
-            # 构建用例列表，确保安全处理数据
+
+            # 如果用例数量太少，直接返回第一个
+            if len(available_cases) <= 1:
+                print("[INFO] 只有1个或更少可用用例，直接使用")
+                return available_cases[0] if available_cases else None
+
+            # 构建简化的用例列表（只保留关键信息，避免prompt太长）
             cases_for_ai = []
             for idx, c in enumerate(available_cases):
                 case_info = {
-                    'index': idx,
-                    'usercaseId': str(c.get('usercaseId', '')),
-                    'name': str(c.get('name', '')),
-                    'description': str(c.get('description', ''))
+                    'id': str(c.get('usercaseId', '')),
+                    'name': str(c.get('name', ''))[:100],  # 限制长度
+                    'desc': str(c.get('description', ''))[:150]  # 限制长度
                 }
                 cases_for_ai.append(case_info)
-            
-            # 准备prompt
-            prompt = f"""你是一个自动化测试专家。我需要为以下测试用例选择最匹配的自动化平台用例模板。
 
-测试用例信息：
-- 标题：{test_case_info.get('title', '')}
-- 描述：{test_case_info.get('description', '')}
-- 前置条件：{test_case_info.get('preconditions', '')}
-- 测试步骤：{test_case_info.get('test_steps', '')}
-- 预期结果：{test_case_info.get('expected_result', '')}
+            # 简化的prompt，减少token使用
+            test_title = test_case_info.get('title', '')[:100]
+            test_desc = test_case_info.get('description', '')[:200]
 
-可选的自动化用例模板：
-{json.dumps(cases_for_ai, ensure_ascii=False, indent=2)}
+            prompt = f"""选择最匹配的自动化用例模板。
 
-请分析测试用例的内容，选择最匹配的自动化用例模板。
-只需要返回选中的usercaseId，不要返回其他内容。
-如果没有合适的，返回第一个用例的usercaseId。"""
+测试用例：
+标题：{test_title}
+描述：{test_desc}
 
-            print(f"[INFO] 使用AI选择最佳用例...")
+可选模板（共{len(cases_for_ai)}个）：
+{json.dumps(cases_for_ai, ensure_ascii=False)}
+
+请只返回选中模板的id（usercaseId），不要返回其他内容。"""
+
+            print(f"[INFO] 使用AI选择最佳用例（超时限制180秒）...")
             print(f"[DEBUG] 可选用例数量: {len(available_cases)}")
-            
-            response = ai_service.llm.invoke(prompt)
-            
-            selected_id = response.content.strip()
-            print(f"[INFO] AI选择的用例ID: {selected_id}")
-            
-            # 查找匹配的用例
-            for c in available_cases:
-                if str(c.get('usercaseId', '')) == selected_id:
-                    print(f"[INFO] 找到匹配的用例: {c.get('name', '')}")
-                    return c
-            
-            print(f"[WARNING] AI返回的ID无效，使用第一个用例")
-            return available_cases[0] if available_cases else None
-                
+            print(f"[DEBUG] Prompt长度: {len(prompt)} 字符")
+
+            # 使用线程池和超时机制调用AI
+            def call_ai():
+                return ai_service.llm.invoke(prompt)
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(call_ai)
+                try:
+                    # 180秒超时
+                    response = future.result(timeout=180)
+
+                    selected_id = response.content.strip()
+                    print(f"[INFO] AI选择的用例ID: {selected_id}")
+
+                    # 查找匹配的用例
+                    for c in available_cases:
+                        if str(c.get('usercaseId', '')) == selected_id:
+                            print(f"[INFO] 找到匹配的用例: {c.get('name', '')}")
+                            return c
+
+                    print(f"[WARNING] AI返回的ID无效，使用第一个用例")
+                    return available_cases[0] if available_cases else None
+
+                except FutureTimeoutError:
+                    print(f"[WARNING] AI调用超时（180秒），使用第一个用例")
+                    return available_cases[0] if available_cases else None
+
         except Exception as e:
             print(f"[ERROR] AI选择用例失败: {e}")
             import traceback

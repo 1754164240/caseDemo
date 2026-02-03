@@ -64,9 +64,34 @@ npm run lint
 ### 测试
 
 项目暂无自动化测试框架。测试脚本集中在 `backend/scripts/` 目录,用于手动验证功能:
-- `backend/scripts/test_*.py` - 各模块功能测试
-- `backend/scripts/create_test_user.py` - 创建测试用户
-- `backend/scripts/set_superuser.py` - 设置超级管理员
+
+```bash
+cd backend
+
+# 功能测试
+python -m scripts.test_*.py
+
+# 用户管理
+python -m scripts.create_test_user     # 创建测试用户
+python -m scripts.set_superuser        # 设置超级管理员
+
+# 审批功能测试
+python -m scripts.test_approval
+```
+
+### 调试和故障排查
+
+```bash
+# 查看Docker容器日志
+docker-compose logs -f postgres    # PostgreSQL 日志
+docker-compose logs -f milvus      # Milvus 日志
+
+# 检查数据库连接
+docker exec -it test_case_postgres psql -U testcase -d test_case_db
+
+# 查看后端日志（开发服务器会直接输出到控制台）
+# 生产环境日志位置取决于部署配置
+```
 
 ## 核心架构
 
@@ -91,10 +116,16 @@ npm run lint
 
 **主要流程** (`create_case_with_fields`):
 1. `get_scene_cases(scene_id)` - 获取场景用例列表
-2. `select_best_case_by_ai()` - AI选择最匹配模板
+2. `select_best_case_by_ai()` - AI选择最匹配模板 (180秒超时保护)
 3. `get_case_detail(usercase_id)` - 获取模板详情（含header/body）
 4. `generate_case_body_by_ai()` - AI生成测试数据
 5. `create_case_and_body()` - 创建用例和明细
+
+**超时保护机制**:
+- AI 选择用例时使用 `ThreadPoolExecutor` + 180 秒超时
+- 超时后自动降级使用第一个可用用例
+- 优化 Prompt 长度减少 token 使用
+- 如果只有 1 个用例则跳过 AI 调用
 
 **关键API端点**:
 - `POST /ai/case/createCaseAndBody` - 创建用例和明细
@@ -111,15 +142,22 @@ npm run lint
 
 ### 模型配置系统
 
-系统支持**多模型配置管理**:
+系统支持**多模型配置管理** (支持为单个配置添加多个模型):
 - 数据库表: `model_configs` (优先级最高)
 - 环境变量: `.env` 文件 (回退方案)
 - 前端界面: `/model-configs` 页面管理模型
+
+**多模型配置特性**:
+- `model_name` 字段存储 JSON 数组格式 (如 `["gpt-4", "gpt-3.5-turbo"]`)
+- `selected_model` 字段指定当前使用的模型
+- 前端提供下拉选择器,支持预设模型列表和自定义输入
+- 支持按提供商分组显示 (OpenAI、智谱AI、通义千问等)
 
 **AI 服务初始化逻辑**:
 1. 如果传入 `model_config_id`,使用指定模型配置
 2. 否则查询 `is_default=True` 的模型配置
 3. 如果数据库查询失败,回退到环境变量 (`OPENAI_API_KEY`, `MODEL_NAME`)
+4. 使用 `selected_model` 字段的值作为实际调用的模型
 
 ### 向量数据库 (Milvus)
 
@@ -238,9 +276,43 @@ AUTOMATION_PLATFORM_API_BASE=http://localhost:8087
 
 项目使用 Alembic 进行迁移,但当前主要通过 SQLAlchemy 自动创建表 (`main.py` 中的 `Base.metadata.create_all()`)。
 
-手动创建表的脚本:
-- `backend/scripts/create_system_config_table.py`
-- `backend/scripts/create_model_configs_table.py`
+**手动迁移脚本**:
+
+```bash
+cd backend
+
+# 创建表
+python -m scripts.create_system_config_table
+python -m scripts.create_model_configs_table
+
+# 数据迁移
+python -m scripts.migrate_model_name_to_array    # 迁移 model_name 为 JSON 数组
+python -m scripts.add_selected_model_field       # 添加 selected_model 字段
+```
+
+**重要迁移**:
+- `migrate_model_name_to_array.py` - 将 model_name 从字符串转为 JSON 数组格式
+- `add_selected_model_field.py` - 为模型配置添加 selected_model 字段
+
+## 最近功能更新
+
+### 1. 多模型选择功能 (2026-02-03)
+- 模型配置支持添加多个模型 (JSON 数组格式)
+- 前端提供预设模型列表下拉选择
+- 支持主流 AI 模型: OpenAI GPT、智谱 GLM、通义千问、DeepSeek、Claude 等
+- 详细文档: `doc/MODEL_NAME_SELECTOR.md`
+
+### 2. AI 选择超时优化 (2026-02-03)
+- 添加 180 秒超时保护机制,防止 AI 调用卡死
+- 超时后自动降级使用第一个可用用例
+- 优化 Prompt 长度,减少约 70% token 使用
+- 详细文档: `doc/AI_SELECTION_TIMEOUT_FIX.md`
+
+### 3. 审批工作流 (2025-11-07)
+- 测试点和测试用例支持完整审批流程
+- 三种状态: 待审批 (pending)、已通过 (approved)、已拒绝 (rejected)
+- 支持审批意见和审批历史记录
+- 详细文档: `doc/审批功能说明.md`
 
 ## 重要注意事项
 
@@ -250,6 +322,8 @@ AUTOMATION_PLATFORM_API_BASE=http://localhost:8087
 4. **文件上传**: 文件存储在 `backend/uploads/` 目录,通过静态文件服务访问
 5. **WebSocket 认证**: 必须在 URL 参数中传递 JWT token
 6. **模型配置优先级**: 数据库配置 > 环境变量
+7. **AI 超时控制**: 自动化用例生成时 AI 调用有 180 秒超时保护,避免卡死
+8. **多模型配置**: model_name 使用 JSON 数组格式,selected_model 指定实际使用的模型
 
 ## 批处理脚本 (Windows)
 
@@ -264,8 +338,17 @@ AUTOMATION_PLATFORM_API_BASE=http://localhost:8087
 ## 参考文档
 
 详细文档位于 `doc/` 目录:
+
+**核心文档**:
 - `QUICK_START.md` - 5 分钟快速启动
 - `ARCHITECTURE.md` - 系统架构设计
 - `FEATURES.md` - 功能详细说明
 - `TROUBLESHOOTING.md` - 问题排查指南
 - `MIGRATION_GUIDE.md` - LangChain 1.0 迁移指南
+
+**功能文档**:
+- `MODEL_NAME_SELECTOR.md` - 模型名称下拉选择功能
+- `MULTI_MODEL_CONFIG.md` - 多模型配置详细说明
+- `MULTI_MODEL_QUICK_START.md` - 多模型快速入门
+- `AI_SELECTION_TIMEOUT_FIX.md` - AI 选择超时问题修复
+- `审批功能说明.md` - 测试点/用例审批流程

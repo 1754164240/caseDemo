@@ -121,6 +121,24 @@ class AIService:
                     ).first()
 
                 if config:
+                    # 解析模型名称列表
+                    import json
+                    model_names = config.model_name
+                    if isinstance(model_names, str):
+                        try:
+                            model_names = json.loads(model_names)
+                        except (json.JSONDecodeError, ValueError):
+                            model_names = [model_names] if model_names else []
+
+                    # 确保是列表
+                    if not isinstance(model_names, list):
+                        model_names = [model_names] if model_names else []
+
+                    # 使用 selected_model，如果没有则使用第一个模型
+                    actual_model = config.selected_model
+                    if not actual_model or not actual_model.strip():
+                        actual_model = model_names[0] if model_names else settings.MODEL_NAME
+
                     # 处理 temperature: 如果为空字符串或 None,使用默认值
                     temp = config.temperature
                     if not temp or (isinstance(temp, str) and not temp.strip()):
@@ -129,7 +147,7 @@ class AIService:
                     return {
                         "api_key": config.api_key,
                         "api_base": config.api_base,
-                        "model_name": config.model_name,
+                        "model_name": actual_model,  # 使用选中的模型，而不是整个列表
                         "temperature": temp,
                         "max_tokens": config.max_tokens,
                         "provider": config.provider,

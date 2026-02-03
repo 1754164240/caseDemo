@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
+import json
 
 from app.db.session import get_db
 from app.models.user import User
@@ -23,6 +24,29 @@ def mask_api_key(api_key: str) -> str:
     return api_key
 
 
+def serialize_model_name(model_name) -> str:
+    """将模型名称序列化为JSON字符串存储到数据库"""
+    if isinstance(model_name, list):
+        return json.dumps(model_name, ensure_ascii=False)
+    elif isinstance(model_name, str):
+        # 单个字符串，包装成数组
+        return json.dumps([model_name], ensure_ascii=False)
+    else:
+        return json.dumps([], ensure_ascii=False)
+
+
+def deserialize_model_name(model_name_str: str):
+    """从数据库读取的JSON字符串反序列化为列表"""
+    if not model_name_str:
+        return []
+    try:
+        result = json.loads(model_name_str)
+        return result if isinstance(result, list) else [result]
+    except (json.JSONDecodeError, ValueError):
+        # 兼容旧数据：如果不是JSON，当作单个模型名称
+        return [model_name_str] if model_name_str else []
+
+
 @router.get("/", response_model=List[ModelConfigResponse])
 def list_model_configs(
     db: Session = Depends(get_db),
@@ -31,15 +55,15 @@ def list_model_configs(
 ):
     """获取所有模型配置列表"""
     query = db.query(ModelConfigModel)
-    
+
     if not include_inactive:
         query = query.filter(ModelConfigModel.is_active == True)
-    
+
     configs = query.order_by(
         ModelConfigModel.is_default.desc(),
         ModelConfigModel.created_at.desc()
     ).all()
-    
+
     # 转换为响应格式并脱敏 API Key
     result = []
     for config in configs:
@@ -50,7 +74,8 @@ def list_model_configs(
             "description": config.description,
             "api_key_masked": mask_api_key(config.api_key),
             "api_base": config.api_base,
-            "model_name": config.model_name,
+            "model_name": deserialize_model_name(config.model_name),  # 反序列化
+            "selected_model": config.selected_model,
             "temperature": config.temperature,
             "max_tokens": config.max_tokens,
             "provider": config.provider,
@@ -61,7 +86,7 @@ def list_model_configs(
             "updated_at": config.updated_at
         }
         result.append(ModelConfigResponse(**config_dict))
-    
+
     return result
 
 
@@ -84,7 +109,7 @@ def get_model_config(
         "description": config.description,
         "api_key_masked": mask_api_key(config.api_key),
         "api_base": config.api_base,
-        "model_name": config.model_name,
+        "model_name": deserialize_model_name(config.model_name),  # 反序列化
         "temperature": config.temperature,
         "max_tokens": config.max_tokens,
         "provider": config.provider,
@@ -138,10 +163,10 @@ def create_model_config(
     existing = db.query(ModelConfigModel).filter(
         ModelConfigModel.name == config.name
     ).first()
-    
+
     if existing:
         raise HTTPException(status_code=400, detail="模型配置名称已存在")
-    
+
     # 如果是第一个配置,自动设为默认
     is_first = db.query(ModelConfigModel).count() == 0
 
@@ -150,13 +175,16 @@ def create_model_config(
     if not temperature or (isinstance(temperature, str) and not temperature.strip()):
         temperature = "1.0"
 
+    # 序列化模型名称为JSON
+    model_name_json = serialize_model_name(config.model_name)
+
     db_config = ModelConfigModel(
         name=config.name,
         display_name=config.display_name,
         description=config.description,
         api_key=config.api_key,
         api_base=config.api_base,
-        model_name=config.model_name,
+        model_name=model_name_json,  # 存储为JSON字符串
         temperature=temperature,
         max_tokens=config.max_tokens,
         provider=config.provider,
@@ -164,11 +192,11 @@ def create_model_config(
         is_active=config.is_active,
         is_default=is_first
     )
-    
+
     db.add(db_config)
     db.commit()
     db.refresh(db_config)
-    
+
     # 返回脱敏后的配置
     return ModelConfigResponse(
         id=db_config.id,
@@ -177,7 +205,7 @@ def create_model_config(
         description=db_config.description,
         api_key_masked=mask_api_key(db_config.api_key),
         api_base=db_config.api_base,
-        model_name=db_config.model_name,
+        model_name=deserialize_model_name(db_config.model_name),  # 反序列化
         temperature=db_config.temperature,
         max_tokens=db_config.max_tokens,
         provider=db_config.provider,
@@ -218,12 +246,16 @@ def update_model_config(
         if not temp or (isinstance(temp, str) and not temp.strip()):
             update_data['temperature'] = "1.0"
 
+    # 处理 model_name: 序列化为JSON
+    if 'model_name' in update_data:
+        update_data['model_name'] = serialize_model_name(update_data['model_name'])
+
     for field, value in update_data.items():
         setattr(db_config, field, value)
 
     db.commit()
     db.refresh(db_config)
-    
+
     return ModelConfigResponse(
         id=db_config.id,
         name=db_config.name,
@@ -231,7 +263,7 @@ def update_model_config(
         description=db_config.description,
         api_key_masked=mask_api_key(db_config.api_key),
         api_base=db_config.api_base,
-        model_name=db_config.model_name,
+        model_name=deserialize_model_name(db_config.model_name),  # 反序列化
         temperature=db_config.temperature,
         max_tokens=db_config.max_tokens,
         provider=db_config.provider,

@@ -86,7 +86,7 @@ export const systemConfigAPI = {
 
   // 自动化测试平台配置
   getAutomationPlatformConfig: () => api.get('/system-config/automation-platform'),
-  updateAutomationPlatformConfig: (data: { api_base: string }) =>
+  updateAutomationPlatformConfig: (data: { api_base: string; module_id: string }) =>
     api.put('/system-config/automation-platform', data),
 
   // Prompt 配置

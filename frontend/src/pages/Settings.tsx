@@ -46,6 +46,7 @@ export default function Settings() {
       const automationResponse = await systemConfigAPI.getAutomationPlatformConfig()
       automationForm.setFieldsValue({
         api_base: automationResponse.data.api_base,
+        module_id: automationResponse.data.module_id,
       })
 
       // 加载 Prompt 配置
@@ -107,6 +108,7 @@ export default function Settings() {
     try {
       await systemConfigAPI.updateAutomationPlatformConfig({
         api_base: values.api_base || '',
+        module_id: values.module_id || '',
       })
       message.success('自动化测试平台配置保存成功')
     } catch (error: any) {
@@ -298,6 +300,14 @@ export default function Settings() {
                 extra="用于与第三方自动化测试平台对接的基础 API 地址，例如：https://autotest.example.com/api"
               >
                 <Input placeholder="https://autotest.example.com/api" />
+              </Form.Item>
+              <Form.Item
+                name="module_id"
+                label="模块ID"
+                rules={[{ required: true, message: '请输入模块ID' }]}
+                extra="自动化测试平台中的模块ID，用于关联测试用例"
+              >
+                <Input placeholder="例如：123456" />
               </Form.Item>
               <Form.Item>
                 <Button type="primary" htmlType="submit" loading={loading}>

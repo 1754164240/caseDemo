@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Card, Row, Col, Statistic, Table, Tag, Tooltip } from 'antd'
-import { FileTextOutlined, CheckSquareOutlined, BulbOutlined, RobotOutlined } from '@ant-design/icons'
+import { Card, Row, Col, Statistic, Table, Tag, Tooltip, Space } from 'antd'
+import { FileTextOutlined, CheckSquareOutlined, BulbOutlined, RobotOutlined, CheckCircleOutlined, ApiOutlined } from '@ant-design/icons'
 import { dashboardAPI } from '../services/api'
 import dayjs from 'dayjs'
 
@@ -153,34 +153,20 @@ export default function Dashboard() {
         </Col>
         <Col span={6}>
           <Card>
-            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-              <RobotOutlined style={{ fontSize: 24, marginRight: 8, marginTop: 4, color: '#722ed1' }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: 'rgba(0, 0, 0, 0.45)', fontSize: 14, marginBottom: 4 }}>
-                  当前模型
-                </div>
-                <Tooltip title={stats.current_model || 'N/A'}>
-                  <div style={{
-                    fontSize: 24,
-                    fontWeight: 600,
-                    color: 'rgba(0, 0, 0, 0.85)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    lineHeight: '32px'
-                  }}>
-                    {(() => {
-                      const modelName = stats.current_model || 'N/A'
-                      // 如果包含 /，只显示最后一部分
-                      if (modelName.includes('/')) {
-                        return modelName.split('/').pop()
-                      }
-                      return modelName
-                    })()}
-                  </div>
-                </Tooltip>
-              </div>
-            </div>
+            <Statistic
+              title="当前模型"
+              value={(() => {
+                // 优先使用 model_config.current_model，否则使用 current_model
+                const modelName = stats.model_config?.current_model || stats.current_model || 'N/A'
+                // 如果包含 /，只显示最后一部分
+                if (modelName.includes('/')) {
+                  return modelName.split('/').pop()
+                }
+                return modelName
+              })()}
+              prefix={<RobotOutlined />}
+              valueStyle={{ color: '#722ed1' }}
+            />
           </Card>
         </Col>
       </Row>

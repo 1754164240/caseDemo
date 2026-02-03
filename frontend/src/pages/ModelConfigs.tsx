@@ -22,6 +22,7 @@ import {
   StarOutlined,
   StarFilled,
   ApiOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons'
 import { modelConfigAPI } from '../services/api'
 
@@ -35,7 +36,8 @@ interface ModelConfig {
   description?: string
   api_key_masked: string
   api_base: string
-  model_name: string
+  model_name: string[] | string  // 支持数组或字符串
+  selected_model?: string  // 当前选中使用的模型
   temperature?: string
   max_tokens?: number
   provider?: string
@@ -196,18 +198,38 @@ export default function ModelConfigs({ embedded = false }: ModelConfigsProps) {
     {
       title: '模型信息',
       key: 'model_info',
-      width: 250,
-      render: (_: any, record: ModelConfig) => (
-        <div>
+      width: 300,
+      render: (_: any, record: ModelConfig) => {
+        const modelNames = Array.isArray(record.model_name) ? record.model_name : [record.model_name]
+        return (
           <div>
-            <Tag color="blue">{record.model_name}</Tag>
-            {record.provider && <Tag>{record.provider}</Tag>}
+            <div style={{ marginBottom: 4 }}>
+              {modelNames.map((name, idx) => {
+                const isSelected = name === record.selected_model
+                return (
+                  <Tag
+                    key={idx}
+                    color={isSelected ? "green" : "blue"}
+                    icon={isSelected ? <CheckCircleOutlined /> : undefined}
+                    style={{ marginBottom: 4 }}
+                  >
+                    {name}
+                  </Tag>
+                )
+              })}
+              {record.provider && <Tag>{record.provider}</Tag>}
+            </div>
+            <div style={{ fontSize: 12, color: '#666' }}>
+              {record.api_base}
+            </div>
+            {record.selected_model && (
+              <div style={{ fontSize: 11, color: '#52c41a', marginTop: 2 }}>
+                使用中: {record.selected_model}
+              </div>
+            )}
           </div>
-          <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-            {record.api_base}
-          </div>
-        </div>
-      ),
+        )
+      },
     },
     {
       title: 'API Key',
@@ -360,10 +382,55 @@ export default function ModelConfigs({ embedded = false }: ModelConfigsProps) {
 
           <Form.Item
             name="model_name"
-            label="模型名称"
-            rules={[{ required: true, message: '请输入模型名称' }]}
+            label="模型名称列表"
+            rules={[
+              { required: true, message: '请输入至少一个模型名称' },
+              {
+                validator: (_, value) => {
+                  if (Array.isArray(value) && value.length > 0) {
+                    return Promise.resolve()
+                  }
+                  return Promise.reject(new Error('请输入至少一个模型名称'))
+                },
+              },
+            ]}
+            extra="手动输入模型名称后按回车添加，支持添加多个模型"
           >
-            <Input placeholder="gpt-4" />
+            <Select
+              mode="tags"
+              placeholder="输入模型名称后按回车（如：gpt-4）"
+              style={{ width: '100%' }}
+              tokenSeparators={[',']}
+            />
+          </Form.Item>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.model_name !== currentValues.model_name
+            }
+          >
+            {({ getFieldValue }) => {
+              const modelNames = getFieldValue('model_name') || []
+              if (modelNames.length === 0) return null
+
+              return (
+                <Form.Item
+                  name="selected_model"
+                  label="选择使用的模型"
+                  rules={[{ required: true, message: '请选择一个模型作为使用模型' }]}
+                  extra="从上面配置的模型中选择一个实际使用"
+                >
+                  <Select placeholder="选择使用的模型">
+                    {modelNames.map((model: string) => (
+                      <Option key={model} value={model}>
+                        {model}
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              )
+            }}
           </Form.Item>
 
           <Form.Item name="provider" label="提供商">
