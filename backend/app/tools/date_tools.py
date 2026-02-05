@@ -16,3 +16,9 @@ def current_date_tool() -> str:
 def current_datetime_tool() -> str:
     """返回当前日期和时间（东八区），格式为 YYYY-MM-DD HH:MM:SS"""
     return datetime.now(CN_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+
+@tool("current_date_yyyymmdd")
+def current_date_yyyymmdd_tool() -> str:
+    """返回当前日期（东八区），格式为 yyyymmdd，例如：20260205"""
+    return datetime.now(CN_TZ).strftime("%Y%m%d")

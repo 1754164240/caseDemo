@@ -94,6 +94,56 @@ class WebSocketService {
         )
         break
       }
+      // 工作流相关消息处理
+      case 'workflow_started': {
+        message.info({
+          content: data.data?.message || '工作流已启动',
+          duration: 3
+        })
+        window.dispatchEvent(
+          new CustomEvent('workflow-started', {
+            detail: data.data
+          })
+        )
+        break
+      }
+      case 'workflow_need_review': {
+        message.warning({
+          content: data.data?.message || 'AI已生成测试数据，请进行人工审核',
+          duration: 5
+        })
+        // 触发审核通知事件
+        window.dispatchEvent(
+          new CustomEvent('workflow-need-review', {
+            detail: data.data
+          })
+        )
+        break
+      }
+      case 'workflow_failed': {
+        message.error({
+          content: data.data?.error || '工作流执行失败',
+          duration: 5
+        })
+        window.dispatchEvent(
+          new CustomEvent('workflow-failed', {
+            detail: data.data
+          })
+        )
+        break
+      }
+      case 'workflow_error': {
+        message.error({
+          content: data.data?.message || '工作流执行异常',
+          duration: 5
+        })
+        window.dispatchEvent(
+          new CustomEvent('workflow-error', {
+            detail: data.data
+          })
+        )
+        break
+      }
       case 'progress':
         message.info(data.message)
         break

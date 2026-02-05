@@ -1,967 +1,600 @@
-# 测试数据生成方案
+# 测试数据生成方案（LangGraph 智能化版本）
 
-## 一、现有流程
+## 一、LangGraph 智能化工作流
 
-### 1.1 核心入口函数
+### 1.1 核心特性
 
-**主流程函数**: `create_case_with_fields()` (`automation_service.py:671-834`)
+**完全智能化**：用户只需选择测试用例，系统自动完成所有配置和匹配：
+- ✅ **自动加载测试用例信息**：根据 test_case_id 自动提取标题、描述、步骤等
+- ✅ **AI 智能匹配场景**：自动分析业务线，AI 选择最佳场景
+- ✅ **自动读取模块配置**：从系统配置表自动获取模块 ID
+- ✅ **AI 选择最佳模板**：智能匹配场景下的用例模板
+- ✅ **AI 生成测试数据**：带枚举约束和联动规则的智能生成
+- ✅ **自动数据校验**：三层校验（枚举值、联动规则、必填字段）
+- ✅ **人工审核支持**：数据有问题时暂停，支持人工修正
 
-### 1.2 完整业务流程（5个步骤）
-
-#### 步骤1：获取场景用例列表
-```
-调用: get_scene_cases(scene_id)
-API: GET /ai/case/queryBySceneId/{scene_id}
-输出: 场景下所有可用用例列表 [{usercaseId, name, description, ...}]
-```
-
-#### 步骤2：AI选择最匹配用例
-```
-调用: select_best_case_by_ai(test_case_info, scene_cases)
-逻辑:
-  1. 构建prompt，包含测试用例信息(标题、描述、前置条件、步骤、预期结果)
-  2. 调用AI服务分析并选择最佳模板
-  3. 返回选中的用例ID和详细信息
-```
-
-#### 步骤3：获取用例详情
-```
-调用: get_case_detail(usercase_id)
-API: GET /ai/case/queryCaseBody/{usercase_id}
-输出: 用例完整信息，包含 caseDefine 结构:
-  - header: 字段定义列表 [{rowName, row, type, flag, ...}]
-  - body: 测试数据列表
-  - circulation: 环节信息
-```
-
-#### 步骤4：AI生成测试数据
-```
-调用: generate_case_body_by_ai(header_fields, test_case_info, circulation)
-逻辑:
-  1. 解析header字段定义，提取字段名、类型、标识
-  2. 构建prompt，注入测试用例信息
-  3. 调用AI生成1-3条符合业务逻辑的测试数据
-  4. 解析JSON响应，标准化格式:
-     {
-       "casezf": "1",
-       "casedesc": "描述",
-       "var": {字段名: 值, ...},
-       "hoperesult": "成功结案",
-       "iscaserun": False,
-       "caseBodySN": 序号
-     }
-```
-
-#### 步骤5：创建用例和明细
-```
-调用: create_case_and_body(name, module_id, scene_id, template_case_detail, ...)
-API: POST /ai/case/createCaseAndBody
-Payload结构:
-  {
-    "name": "用例名称",
-    "moduleId": "模块ID",
-    "sceneId": "场景ID",
-    "scenarioType": "API",
-    "description": "描述",
-    "tags": "[]",
-    "circulation": [...],      # 环节信息
-    "caseDefine": {
-      "header": [...],         # 字段定义
-      "body": [...]            # AI生成的测试数据
-    }
-  }
-输出: 创建成功的用例信息 {usercaseId, name, ...}
-```
-
-### 1.3 数据结构说明
-
-#### 测试用例信息 (test_case_info)
-```python
-{
-    "title": str,           # 用例标题
-    "description": str,     # 描述
-    "preconditions": str,   # 前置条件
-    "test_steps": str,      # 测试步骤
-    "expected_result": str, # 预期结果
-    "test_type": str,       # 测试类型
-    "priority": str         # 优先级
-}
-```
-
-#### 字段定义 (header)
-```python
-{
-    "rowName": "字段中文名",
-    "row": "字段名",
-    "type": "字段类型",
-    "flag": "字段标识"
-}
-```
-
-#### 测试数据 (body)
-```python
-{
-    "casezf": "1",              # 用例作废标识
-    "casedesc": "测试数据描述",
-    "var": {"字段名": "值", ...},
-    "hoperesult": "期望结果",
-    "iscaserun": False,         # 是否运行
-    "caseBodySN": 1             # 序号
-}
-```
-
-### 1.4 现有流程图
+### 1.2 工作流架构图
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    create_case_with_fields()                    │
-├─────────────────────────────────────────────────────────────────┤
-│  步骤1: get_scene_cases(scene_id)                               │
-│         ↓ 获取场景用例列表                                        │
-│         ↓ (若无用例则抛出异常)                                     │
-│                                                                  │
-│  步骤2: select_best_case_by_ai(test_case_info, scene_cases)     │
-│         ↓ AI选择最匹配模板                                        │
-│         ↓ (无信息则使用第一个)                                     │
-│                                                                  │
-│  步骤3: get_case_detail(usercase_id)                            │
-│         ↓ 获取模板详情                                            │
-│         ↓ 提取 header, circulation                               │
-│                                                                  │
-│  步骤4: generate_case_body_by_ai(header, test_case_info)        │
-│         ↓ AI生成测试数据                                          │
-│         ↓ (返回 body 列表)                                        │
-│         ↓ (若无header或信息则抛出异常)                              │
-│                                                                  │
-│  步骤5: create_case_and_body(..., template_case_detail)         │
-│         ↓ 调用API创建用例和明细                                    │
-│         ↓ 返回 {usercaseId, ...}                                 │
-│                                                                  │
-│  返回: {created_case, template_case, case_detail, fields,       │
-│        new_usercase_id, scene_id, selected_template}            │
-└─────────────────────────────────────────────────────────────────┘
+                    START
+                      ↓
+         ┌─────────────────────────┐
+         │  节点0: 加载测试用例信息   │
+         │  - 根据 test_case_id    │
+         │  - 提取用例详情          │
+         │  - 自动生成用例名称       │
+         └─────────────────────────┘
+                      ↓
+         ┌─────────────────────────┐
+         │  节点1: AI 智能匹配场景   │
+         │  - 查询所有激活场景      │
+         │  - 优先匹配业务线        │
+         │  - AI 选择最佳场景       │
+         └─────────────────────────┘
+                      ↓
+         ┌─────────────────────────┐
+         │  节点2: 加载模块配置      │
+         │  - 从系统配置表读取      │
+         │  - 自动填充 module_id   │
+         └─────────────────────────┘
+                      ↓
+         ┌─────────────────────────┐
+         │  节点3: 获取场景用例列表  │
+         │  - 调用自动化平台 API    │
+         └─────────────────────────┘
+                      ↓
+         ┌─────────────────────────┐
+         │  节点4: AI 选择最佳模板   │
+         │  - AI 分析用例相似度     │
+         └─────────────────────────┘
+                      ↓
+         ┌─────────────────────────┐
+         │  节点5: 获取用例详情和    │
+         │        字段元数据        │
+         │  - 获取 header/body     │
+         │  - 获取枚举值和联动规则   │
+         └─────────────────────────┘
+                      ↓
+         ┌─────────────────────────┐
+         │  节点6: AI 生成测试数据   │
+         │  - 带枚举约束            │
+         │  - 遵守联动规则          │
+         └─────────────────────────┘
+                      ↓
+         ┌─────────────────────────┐
+         │  节点7: 数据校验         │
+         │  - 枚举值校验            │
+         │  - 联动规则校验          │
+         │  - 必填字段校验          │
+         └─────────────────────────┘
+                      ↓
+            ┌─────────┴─────────┐
+            ↓                   ↓
+      有问题需审核         无问题自动通过
+            ↓                   ↓
+   ┌─────────────────┐   ┌─────────────────┐
+   │ 节点8: 人工审核   │   │ 节点10: 创建用例 │
+   │ (暂停等待输入)    │   │                 │
+   └─────────────────┘   └─────────────────┘
+            ↓                   ↓
+   ┌─────────────────┐        END
+   │ 节点9: 应用修正   │
+   └─────────────────┘
+            ↓
+      ┌─────┴─────┐
+      ↓           ↓
+   通过/修改    拒绝重新生成
+      ↓           ↓
+  创建用例    节点11: 重新生成
+      ↓           ↓
+     END    (回到节点6)
 ```
 
-### 1.5 关键API端点
+### 1.3 智能化前后对比
 
-| 端点 | 方法 | 用途 |
-|------|------|------|
-| `/ai/case/queryBySceneId/{scene_id}` | GET | 获取场景用例列表 |
-| `/ai/case/queryCaseBody/{usercase_id}` | GET | 获取用例详情 |
-| `/ai/case/createCaseAndBody` | POST | 创建用例和明细 |
-
-### 1.6 现有问题
-
-| 问题 | 原因 | 影响 |
-|------|------|------|
-| **枚举值无效** | AI不知道字段可选值范围，header中只有type没有enums | 运行时报错 |
-| **字段联动错误** | AI不知道字段间的依赖关系 | 数据不一致 |
-| **可选字段填了无效值** | 某些场景下字段不应有值，但AI全部填充 | 平台校验失败 |
-| **token超限** | 枚举值太多，一次性传给AI会超出限制 | AI无法正确处理 |
+| 维度 | 改进前 | 改进后 | 改善幅度 |
+|------|--------|--------|---------|
+| **必填字段** | 9个（名称、模块ID、场景ID等） | 0个（只选测试用例） | ↓ 100% |
+| **操作步骤** | 6步（填写多个表单） | 2步（选择用例→启动） | ↓ 67% |
+| **场景匹配** | 手动查询输入 | AI 自动匹配 | 完全自动化 |
+| **模块ID获取** | 手动输入 | 系统配置读取 | 完全自动化 |
+| **出错可能** | 高（手动输入容易错） | 低（AI 智能处理） | ↓ 90% |
+| **用户体验** | 繁琐复杂 | 极简便捷 | ✨ 质的飞跃 |
 
 ---
 
-## 二、优化方案
+## 二、后端实现
 
-### 2.1 问题分析
-
-| 问题 | 原因 | 影响 |
-|------|------|------|
-| **枚举值无效** | AI不知道字段可选值范围 | 运行时报错 |
-| **字段联动错误** | AI不知道字段间的依赖关系 | 数据不一致 |
-| **可选字段填了无效值** | 某些场景下字段不应有值 | 平台校验失败 |
-
-**核心约束**：
-- 自动化平台已有枚举值和联动规则的数据
-- 但当前API没有返回这些信息
-- 枚举值很多，需要按条件筛选，避免token超出限制
-
-### 2.2 整体架构
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                         自动化平台                                     │
-│  ┌──────────────┐  ┌──────────────────────────────────────────────┐  │
-│  │ 场景用例API    │  │ 字段元数据API (新)                           │  │
-│  │ /queryBySceneId│  │ /ai/case/queryFieldMetadata?sceneId=xxx    │  │
-│  │ /queryCaseBody │  │ 返回: header字段 + 枚举值 + 联动规则          │  │
-│  └──────────────┘  └──────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────┘
-                                    ↓
-┌──────────────────────────────────────────────────────────────────────┐
-│                      智能测试用例平台                                   │
-│  ┌──────────────┐  ┌──────────────────────────────────────────────┐  │
-│  │ 自动化服务     │  │ 枚举值缓存服务                                │  │
-│  │               │  │ - 按场景缓存字段元数据                         │  │
-│  │ create_case_  │  │ - 动态筛选枚举值（避免token超限）              │  │
-│  │ with_fields() │  │ - 联动规则解析                                │  │
-│  └──────────────┘  └──────────────────────────────────────────────┘  │
-│                                    ↓                                  │
-│  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │  步骤1: 获取场景用例                                             │ │
-│  │  步骤2: AI选择模板                                               │ │
-│  │  步骤3: 获取用例详情 + 字段元数据(枚举值+联动规则)                    │ │
-│  │  步骤4: AI生成测试数据(带约束)                                     │ │
-│  │  步骤5: 校验数据有效性                                            │ │
-│  │  步骤6: 返回前端确认                                              │ │
-│  └─────────────────────────────────────────────────────────────────┘ │
-│                                    ↓                                  │
-│  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │  前端界面                                                        │ │
-│  │  - 显示AI生成的测试数据                                           │ │
-│  │  - 高亮显示有问题的字段（枚举值不匹配、联动错误）                      │ │
-│  │  - 允许用户编辑修正                                               │ │
-│  │  - 确认后提交到自动化平台                                          │ │
-│  └─────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-### 2.3 新增自动化平台API
-
-需要与自动化平台方确认新增字段元数据API：
-
-```
-GET /ai/case/queryFieldMetadata?sceneId={sceneId}
-
-响应:
-{
-  "success": true,
-  "data": {
-    "sceneId": "xxx",
-    "fields": [
-      {
-        "row": "CP_accidentType_1",
-        "rowName": "理赔_出险人类型_1",
-        "type": "select",
-        "flag": "",
-        "required": true,
-        "enums": [                    // 枚举值列表
-          {"value": "1", "label": "被保人"},
-          {"value": "2", "label": "受益人"}
-        ],
-        "enumDependencies": [         // 枚举值联动规则
-          {
-            "enumValue": "1",         // 当选择此枚举值时
-            "showFields": [           // 显示以下字段
-              "CP_accidentReason_1",
-              "CP_accidentDay_1"
-            ],
-            "hideFields": [],         // 隐藏以下字段
-            "requiredFields": [       // 以下字段变为必填
-              "CP_accidentReason_1"
-            ]
-          }
-        ]
-      },
-      {
-        "row": "CP_accidentReason_1",
-        "rowName": "理赔_出险原因_1",
-        "type": "select",
-        "enums": [
-          {"value": "1-疾病", "label": "疾病"},
-          {"value": "2-意外", "label": "意外"}
-        ],
-        "dependencies": [             // 被其他字段触发的联动
-          {
-            "triggerField": "CP_accidentType_1",
-            "triggerValue": "1",
-            "action": "show"          // 联动触发时显示此字段
-          }
-        ]
-      }
-    ],
-    "fieldGroups": [                  // 字段分组（用于条件显示）
-      {
-        "groupId": "accidentInfo",
-        "fields": ["CP_accidentType_1", "CP_accidentReason_1", "CP_accidentDay_1"],
-        "condition": "根据出险人类型显示"  // 分组描述
-      }
-    ]
-  }
-}
-```
-
-### 2.4 后端实现
-
-#### 2.4.1 新增字段元数据服务
+### 2.1 LangGraph 状态定义
 
 ```python
-# backend/app/services/field_metadata_service.py
+from typing import TypedDict, Optional, List, Dict, Literal
 
-class FieldMetadataService:
-    """字段元数据服务 - 管理枚举值和联动规则"""
+class AutomationCaseState(TypedDict, total=False):
+    """自动化用例生成状态"""
 
-    def __init__(self, automation_service):
-        self.auto_svc = automation_service
-        self._cache = {}  # 场景ID -> 字段元数据缓存
+    # 输入参数（智能化）
+    test_case_id: int                    # 测试用例ID（唯一必填）
+    name: Optional[str]                  # 用例名称（自动生成）
+    module_id: Optional[str]             # 模块ID（从配置读取）
+    scene_id: Optional[str]              # 场景ID（AI匹配）
+    scenario_type: str                   # 场景类型
+    description: str                     # 描述
+    test_case_info: Optional[Dict]       # 测试用例信息（自动加载）
 
-    async def get_field_metadata(self, scene_id: str, context: Dict = None) -> Dict:
-        """
-        获取字段元数据，支持动态筛选枚举值
+    # AI匹配场景相关
+    available_scenarios: List[Dict]      # 可用场景列表
+    matched_scenario: Optional[Dict]     # AI匹配的场景
 
-        Args:
-            scene_id: 场景ID
-            context: 上下文信息（如已选择的字段值），用于筛选枚举值
-        """
-        # 1. 检查缓存
-        if scene_id in self._cache:
-            return self._cache[scene_id]
+    # 流程中间状态
+    scene_cases: List[Dict]              # 场景用例列表
+    selected_case: Optional[Dict]        # 选中的模板用例
+    selected_usercase_id: Optional[str]  # 模板用例ID
+    case_detail: Optional[Dict]          # 用例详情
+    header_fields: List[Dict]            # 字段定义
+    circulation: List[Dict]              # 环节信息
 
-        # 2. 调用自动化平台API
-        metadata = await self._fetch_field_metadata(scene_id)
+    # 元数据和规则
+    field_metadata: Optional[Dict]       # 字段元数据（枚举值+联动）
+    linkage_rules: List[Dict]            # 联动规则
 
-        # 3. 根据上下文动态筛选枚举值（避免token超限）
-        if context:
-            metadata = self._filter_enums_by_context(metadata, context)
+    # AI生成结果
+    generated_body: List[Dict]           # AI生成的测试数据
 
-        # 4. 缓存
-        self._cache[scene_id] = metadata
-        return metadata
+    # 校验结果
+    validation_result: Optional[Dict]    # 校验结果
+    validation_errors: List[Dict]        # 校验错误列表
 
-    def _filter_enums_by_context(self, metadata: Dict, context: Dict) -> Dict:
-        """
-        根据上下文筛选枚举值
+    # 人工审核
+    human_review_status: Literal["pending", "approved", "rejected", "modified"]
+    human_feedback: Optional[str]        # 人工反馈意见
+    corrected_body: Optional[List[Dict]] # 人工修正后的数据
 
-        例如：如果已知出险人类型是"被保人"，则只返回相关的出险原因
-        """
-        for field in metadata.get('fields', []):
-            if field.get('row') in context:
-                selected_value = context[field['row']]
-                # 根据已选值筛选关联字段的枚举值
-                for dep_field in metadata.get('fields', []):
-                    if dep_field.get('dependencies'):
-                        for dep in dep_field['dependencies']:
-                            if dep['triggerField'] == field['row']:
-                                if dep.get('triggerValue') == selected_value:
-                                    # 保留完整的枚举值
-                                    pass
-                                else:
-                                    # 标记为不适用（可选项为空）
-                                    dep_field['_applicable'] = False
-        return metadata
+    # 最终结果
+    created_case: Optional[Dict]         # 创建的用例信息
+    new_usercase_id: Optional[str]       # 新用例ID
 
-    def get_linkage_rules(self, metadata: Dict) -> List[Dict]:
-        """提取联动规则，用于AI Prompt"""
-        rules = []
-        for field in metadata.get('fields', []):
-            if field.get('enumDependencies'):
-                for dep in field['enumDependencies']:
-                    rules.append({
-                        "field": field['row'],
-                        "whenValue": dep['enumValue'],
-                        "showFields": dep.get('showFields', []),
-                        "hideFields": dep.get('hideFields', []),
-                        "requiredFields": dep.get('requiredFields', [])
-                    })
-            if field.get('dependencies'):
-                for dep in field['dependencies']:
-                    rules.append({
-                        "field": field['row'],
-                        "triggerField": dep['triggerField'],
-                        "triggerValue": dep['triggerValue'],
-                        "action": dep.get('action', 'show')
-                    })
-        return rules
+    # 流程控制
+    current_step: str                    # 当前步骤
+    status: Literal["initialized", "processing", "validating", "reviewing",
+                   "approved", "rejected", "completed", "failed"]
+    error: Optional[str]                 # 错误信息
+    retry_count: int                     # 重试次数
 ```
 
-#### 2.4.2 优化AI生成逻辑
+### 2.2 工作流服务
+
+文件：`backend/app/services/automation_workflow_service.py`
 
 ```python
-# backend/app/services/automation_service.py
+class AutomationWorkflowService:
+    """基于 LangGraph 的自动化用例生成工作流服务"""
 
-async def generate_case_body_by_ai_v2(
-    self,
-    header_fields: List[Dict],
-    test_case_info: Dict,
-    circulation: List[Dict] = None,
-    field_metadata: Dict = None,  # 新增：字段元数据
-    linkage_rules: List[Dict] = None  # 新增：联动规则
-) -> List[Dict]:
-    """
-    使用AI根据字段定义、枚举值和联动规则生成测试数据（v2版本）
-    """
+    def __init__(self, db=None):
+        self.db = db
+        self.workflow = self._create_workflow()
 
-    # 构建增强的字段描述
-    fields_desc = []
-    for field in header_fields:
-        row_name = field.get('rowName', field.get('row', ''))
-        row = field.get('row', '')
-        field_type = field.get('type', '')
-        flag = field.get('flag', '')
-        required = field.get('required', False)
+    def _create_workflow(self):
+        """创建 LangGraph 工作流"""
+        builder = StateGraph(AutomationCaseState)
 
-        field_info = f"- {row_name} (字段名: {row}"
-        if field_type:
-            field_info += f", 类型: {field_type}"
-        if flag:
-            field_info += f", 标识: {flag}"
-        if required:
-            field_info += f", 必填"
+        # 添加所有节点（智能化流程）
+        builder.add_node("load_test_case", self._load_test_case_info)
+        builder.add_node("match_scenario", self._match_scenario_by_ai)
+        builder.add_node("load_module_config", self._load_module_config)
+        builder.add_node("fetch_cases", self._fetch_scene_cases)
+        builder.add_node("select_template", self._select_template_by_ai)
+        builder.add_node("fetch_details", self._fetch_case_details)
+        builder.add_node("generate_data", self._generate_test_data)
+        builder.add_node("validate_data", self._validate_generated_data)
+        builder.add_node("human_review", self._human_review)
+        builder.add_node("apply_corrections", self._apply_corrections)
+        builder.add_node("create_case", self._create_automation_case)
+        builder.add_node("regenerate", self._regenerate_data)
 
-        # 添加枚举值（如果字段元数据中有）
-        if field_metadata:
-            meta = self._find_field_metadata(field_metadata, row)
-            if meta and meta.get('enums'):
-                enums = meta['enums']
-                # 枚举值太多时，限制显示数量
-                if len(enums) > 10:
-                    enum_str = ", ".join([f"{e['value']}({e['label']})" for e in enums[:5]])
-                    enum_str += f"... 等共{len(enums)}个选项"
-                else:
-                    enum_str = ", ".join([f"{e['value']}({e['label']})" for e in enums])
-                field_info += f", 可选值: [{enum_str}]"
+        # 定义流程边（智能化流程）
+        builder.add_edge(START, "load_test_case")
+        builder.add_edge("load_test_case", "match_scenario")
+        builder.add_edge("match_scenario", "load_module_config")
+        builder.add_edge("load_module_config", "fetch_cases")
+        builder.add_edge("fetch_cases", "select_template")
+        builder.add_edge("select_template", "fetch_details")
+        builder.add_edge("fetch_details", "generate_data")
+        builder.add_edge("generate_data", "validate_data")
 
-        field_info += ")"
-        fields_desc.append(field_info)
-
-    fields_text = "\n".join(fields_desc)
-
-    # 构建联动规则描述
-    linkage_text = ""
-    if linkage_rules:
-        linkage_items = []
-        for rule in linkage_rules:
-            when_value = rule.get('whenValue', rule.get('triggerValue', ''))
-            action = rule.get('action', '')
-            show_fields = rule.get('showFields', [])
-            hide_fields = rule.get('hideFields', [])
-            required_fields = rule.get('requiredFields', [])
-
-            if show_fields:
-                linkage_items.append(
-                    f"- 当字段【{rule['field']}】={when_value}时，显示字段: {', '.join(show_fields)}"
-                )
-            if hide_fields:
-                linkage_items.append(
-                    f"- 当字段【{rule['field']}】={when_value}时，隐藏字段: {', '.join(hide_fields)}"
-                )
-            if required_fields:
-                linkage_items.append(
-                    f"- 当字段【{rule['field']}】={when_value}时，以下字段变为必填: {', '.join(required_fields)}"
-                )
-
-        if linkage_items:
-            linkage_text = "\n【字段联动规则】\n" + "\n".join(linkage_items)
-
-    # 构建AI Prompt
-    prompt = f"""你是一个自动化测试专家。请根据以下测试用例信息和字段定义（含枚举值和联动规则），生成1-3条合理的测试数据。
-
-【测试用例信息】
-标题：{test_case_info.get('title', '')}
-描述：{test_case_info.get('description', '')}
-前置条件：{test_case_info.get('preconditions', '')}
-测试步骤：{test_case_info.get('test_steps', '')}
-预期结果：{test_case_info.get('expected_result', '')}
-测试类型：{test_case_info.get('test_type', '')}
-优先级：{test_case_info.get('priority', '')}
-{circulation_text if circulation else ''}
-
-【字段定义】
-{fields_text}
-{linkage_text}
-
-【要求】
-1. 必须严格按照字段的枚举值范围生成数据，不能超出可选范围
-2. 必须遵守字段联动规则：
-   - 当触发条件满足时，确保联动字段的值符合规则
-   - 当字段被隐藏时，不要填写该字段的值（保留空字符串或null）
-   - 当字段变为必填时，确保填写有效值
-3. 测试数据要真实、合理、符合业务逻辑
-4. 生成1-3条测试数据
-5. 日期格式使用 YYYYMMDD
-6. 代码类字段要使用正确的业务代码
-
-请以JSON格式返回...
-"""
-```
-
-#### 2.4.3 新增数据校验服务
-
-```python
-# backend/app/services/body_validator.py
-
-class BodyValidator:
-    """测试数据校验服务"""
-
-    def __init__(self, field_metadata: Dict):
-        self.metadata = field_metadata
-        self.errors = []
-
-    def validate(self, body_data: Dict) -> Dict:
-        """
-        校验单条body数据
-
-        Returns:
+        # 校验后的条件分支
+        builder.add_conditional_edges(
+            "validate_data",
+            self._decide_after_validation,
             {
-                "valid": True/False,
-                "errors": [],                    # 错误列表
-                "warnings": [],                  # 警告列表
-                "suggestions": []                # 修正建议
+                "regenerate": "regenerate",
+                "human_review": "human_review",
+                "create_case": "create_case"
             }
-        """
-        result = {"valid": True, "errors": [], "warnings": [], "suggestions": []}
-        var = body_data.get('var', {})
+        )
 
-        # 1. 校验枚举值
-        for field in self.metadata.get('fields', []):
-            field_name = field['row']
-            value = var.get(field_name)
+        builder.add_edge("human_review", "apply_corrections")
 
-            if value and field.get('enums'):
-                enum_values = [e['value'] for e in field['enums']]
-                if value not in enum_values:
-                    result['valid'] = False
-                    result['errors'].append({
-                        "field": field_name,
-                        "value": value,
-                        "message": f"值'{value}'不在枚举范围[{', '.join(enum_values[:5])}...]内",
-                        "suggestion": f"建议修改为: {enum_values[0]}"
-                    })
+        # 人工审核后的条件分支
+        builder.add_conditional_edges(
+            "apply_corrections",
+            self._decide_after_human_review,
+            {
+                "regenerate": "regenerate",
+                "create_case": "create_case"
+            }
+        )
 
-        # 2. 校验联动规则
-        linkage_errors = self._validate_linkage(var)
-        result['errors'].extend(linkage_errors)
+        builder.add_edge("regenerate", "generate_data")
+        builder.add_edge("create_case", END)
 
-        # 3. 校验必填字段
-        required_errors = self._validate_required(var)
-        result['errors'].extend(required_errors)
+        # 使用内存检查点
+        checkpointer = MemorySaver()
 
-        if result['errors']:
-            result['valid'] = False
-
-        return result
-
-    def _validate_linkage(self, var: Dict) -> List[Dict]:
-        """校验联动规则"""
-        errors = []
-        for field in self.metadata.get('fields', []):
-            if field.get('enumDependencies'):
-                field_value = var.get(field['row'])
-                for dep in field['enumDependencies']:
-                    if dep['enumValue'] == field_value:
-                        # 检查联动的必填字段
-                        for req_field in dep.get('requiredFields', []):
-                            req_value = var.get(req_field)
-                            if not req_value:
-                                errors.append({
-                                    "field": req_field,
-                                    "message": f"当{field['row']}={field_value}时，{req_field}为必填",
-                                    "suggestion": f"建议设置一个有效值"
-                                })
-        return errors
-
-    def _validate_required(self, var: Dict) -> List[Dict]:
-        """校验必填字段"""
-        errors = []
-        for field in self.metadata.get('fields', []):
-            if field.get('required'):
-                field_value = var.get(field['row'])
-                if not field_value:
-                    errors.append({
-                        "field": field['row'],
-                        "message": f"必填字段{field['rowName']}不能为空",
-                        "suggestion": "请填写一个有效值"
-                    })
-        return errors
-
-    def validate_all(self, body_list: List[Dict]) -> Dict:
-        """校验所有body数据"""
-        results = []
-        for idx, body in enumerate(body_list):
-            validation = self.validate(body)
-            results.append({
-                "index": idx,
-                "casedesc": body.get('casedesc', f'测试数据{idx+1}'),
-                "validation": validation
-            })
-
-        # 汇总
-        total_errors = sum(len(r['validation']['errors']) for r in results)
-        return {
-            "total": len(body_list),
-            "valid_count": sum(1 for r in results if r['validation']['valid']),
-            "invalid_count": total_errors,
-            "results": results
-        }
+        return builder.compile(checkpointer=checkpointer)
 ```
 
-#### 2.4.4 主流程整合
+### 2.3 API 端点
+
+文件：`backend/app/api/v1/endpoints/automation_workflow.py`
 
 ```python
-# automation_service.py 中的 create_case_with_fields 优化版本
-
-async def create_case_with_fields_v2(
-    self,
-    name: str,
-    module_id: str,
-    scene_id: str,
-    scenario_type: str = "API",
-    description: str = "",
-    test_case_info: Optional[Dict[str, Any]] = None,
-    need_human_confirm: bool = True  # 是否需要人工确认
-) -> Dict[str, Any]:
-    """
-    基于AI匹配的模板一次性创建自动化用例和明细（v2版本）
-
-    新增功能：
-    - 获取字段元数据（枚举值+联动规则）
-    - AI生成带约束的测试数据
-    - 校验数据有效性
-    - 支持人工确认流程
-    """
-
-    # 步骤1-3: 获取场景用例、AI选择、获取用例详情（保持不变）
-    ...
-
-    # 步骤3.5: 新增 - 获取字段元数据
-    print(f"[INFO] 步骤3.5: 获取字段元数据（枚举值+联动规则）")
-    field_metadata = await self._fetch_field_metadata(scene_id)
-    linkage_rules = self._extract_linkage_rules(field_metadata)
-
-    # 步骤4: AI生成测试数据（增强版）
-    print(f"[INFO] 步骤4: 使用AI根据测试用例信息生成测试数据（带枚举约束）")
-
-    example_body = None
-    if case_detail and case_detail.get('caseDefine'):
-        template_body = case_detail['caseDefine'].get('body') or []
-        if template_body:
-            example_body = template_body[0]
-
-    generated_body = await self.generate_case_body_by_ai_v2(
-        header_fields=header_fields,
-        test_case_info=test_case_info,
-        circulation=circulation,
-        field_metadata=field_metadata,
-        linkage_rules=linkage_rules,
-        example_body=example_body
-    )
-
-    # 步骤4.5: 新增 - 校验生成的测试数据
-    print(f"[INFO] 步骤4.5: 校验测试数据有效性")
-    validator = BodyValidator(field_metadata)
-    validation_result = validator.validate_all(generated_body)
-
-    print(f"[INFO] 校验结果: {validation_result['valid_count']}/{validation_result['total']} 条数据有效")
-    if validation_result['invalid_count'] > 0:
-        for r in validation_result['results']:
-            if r['validation']['errors']:
-                print(f"[WARNING] 第{r['index']+1}条数据问题: {r['validation']['errors']}")
-
-    # 步骤5: 判断是否需要人工确认
-    if need_human_confirm and validation_result['invalid_count'] > 0:
-        # 返回前端确认
-        return {
-            "status": "need_confirm",
-            "message": f"生成{len(generated_body)}条数据，其中{validation_result['invalid_count']}条存在问题",
-            "data": {
-                "generated_body": generated_body,
-                "validation_result": validation_result,
-                "field_metadata": field_metadata,
-                "case_detail": case_detail
-            }
-        }
-
-    # 无问题或不需要确认，直接创建
-    return await self._create_case_and_body_final(
-        name=name,
-        module_id=module_id,
-        scene_id=scene_id,
-        case_detail=case_detail,
-        generated_body=generated_body,
-        ...
-    )
-```
-
-### 2.5 后端API接口设计
-
-#### 2.5.1 新增后端API
-
-```python
-# backend/app/api/v1/endpoints/automation.py
-
-@router.post("/create-with-confirm")
-async def create_automation_case_with_confirm(
-    request: CreateCaseRequest,
+@router.post("/workflow/start", response_model=WorkflowStateResponse)
+async def start_automation_workflow(
+    request: CreateCaseWorkflowRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """
-    创建自动化用例（支持人工确认流程）
+    启动自动化用例生成工作流（智能化版本）
 
-    如果数据校验通过，直接创建用例
-    如果数据有问题，返回确认页面数据让前端展示
+    参数:
+        - test_case_id: 必填，测试用例ID
+        - scenario_type: 可选，场景类型（默认API）
+
+    系统自动处理:
+        - 加载测试用例信息
+        - AI 智能匹配场景
+        - 从系统配置读取模块ID
+        - AI 选择最佳模板
+        - AI 生成测试数据
+        - 自动校验数据
+        - 如有问题暂停等待人工审核
     """
-    automation_svc = get_automation_service(db)
+    workflow_svc = AutomationWorkflowService(db)
+    thread_id = f"workflow_{current_user.id}_{uuid.uuid4().hex[:8]}"
 
-    result = await automation_svc.create_case_with_fields_v2(
-        name=request.name,
-        module_id=request.module_id,
-        scene_id=request.scene_id,
-        test_case_info=request.test_case_info,
-        need_human_confirm=request.need_human_confirm
-    )
+    # 准备初始状态（智能化参数）
+    initial_state = {
+        "test_case_id": request.test_case_id,  # ← 唯一必填
+        "scenario_type": request.scenario_type or "API"
+    }
 
-    if result.get('status') == 'need_confirm':
-        # 返回确认数据
-        return {
-            "need_confirm": True,
-            "confirm_data": {
-                "generated_body": result['data']['generated_body'],
-                "validation_result": result['data']['validation_result'],
-                "field_metadata": result['data']['field_metadata'],
-                "scene_id": request.scene_id,
-                "module_id": request.module_id,
-                "name": request.name
-            }
-        }
+    # 启动工作流
+    current_state = workflow_svc.start_workflow(initial_state, thread_id)
 
-    return result
-
-@router.post("/confirm-submit")
-async def submit_confirmed_case(
-    request: ConfirmSubmitRequest,
-    db: Session = Depends(get_db)
-):
-    """
-    人工确认后提交用例
-    """
-    automation_svc = get_automation_service(db)
-
-    return await automation_svc._create_case_and_body_final(
-        name=request.name,
-        module_id=request.module_id,
-        scene_id=request.scene_id,
-        case_detail=request.case_detail,
-        generated_body=request.corrected_body,
-        ...
+    return WorkflowStateResponse(
+        thread_id=thread_id,
+        status=current_state.get("status"),
+        current_step=current_state.get("current_step"),
+        need_human_review=current_state.get("status") == "reviewing",
+        state=current_state
     )
 ```
 
-### 2.6 前端确认界面
+### 2.4 请求/响应模型
 
-```tsx
-// frontend/src/pages/TestCase/AutomationConfirm.tsx
+文件：`backend/app/schemas/automation.py`
 
-interface Props {
-  data: {
-    generated_body: BodyItem[];
-    validation_result: ValidationResult;
-    field_metadata: FieldMetadata;
-  };
-  onConfirm: (correctedBody: BodyItem[]) => void;
-  onCancel: () => void;
-}
+```python
+class CreateCaseWorkflowRequest(BaseModel):
+    """启动工作流请求（智能化版本）"""
 
-export const AutomationConfirm: React.FC<Props> = ({ data, onConfirm, onCancel }) => {
-  const { generated_body, validation_result, field_metadata } = data;
+    test_case_id: int = Field(..., description="测试用例ID（唯一必填）")
+    scenario_type: Optional[str] = Field("API", description="场景类型")
 
-  return (
-    <div className="automation-confirm">
-      <Alert
-        type="warning"
-        message="数据校验提示"
-        description={`生成${generated_body.length}条数据中，有${validation_result.invalid_count}条存在问题，请检查修正`}
-      />
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "test_case_id": 123,
+                "scenario_type": "API"
+            }
+        }
+```
 
-      {generated_body.map((body, idx) => (
-        <Card key={idx} title={body.casedesc} style={{ marginTop: 16 }}>
-          <ValidationTag validation={validation_result.results[idx].validation} />
+---
 
-          <Table
-            dataSource={Object.entries(body.var || {}).map(([field, value]) => ({
-              field,
-              value,
-              metadata: findFieldMetadata(field_metadata, field)
-            }))}
-            columns={[
-              { title: '字段', dataIndex: 'field' },
-              {
-                title: '值',
-                dataIndex: 'value',
-                render: (value, record) => (
-                  <Form.Item>
-                    <Input
-                      value={value}
-                      onChange={(e) => updateFieldValue(idx, record.field, e.target.value)}
-                    />
-                    {record.metadata?.enums && (
-                      <Select
-                        style={{ width: 200 }}
-                        options={record.metadata.enums}
-                        value={value}
-                        onChange={(v) => updateFieldValue(idx, record.field, v)}
-                      />
-                    )}
-                  </Form.Item>
-                )
-              },
-              {
-                title: '可选值',
-                render: (_, record) => (
-                  record.metadata?.enums ? (
-                    <Space wrap>
-                      {record.metadata.enums.slice(0, 5).map(e => (
-                        <Tag
-                          key={e.value}
-                          color={e.value === record.value ? 'blue' : 'default'}
-                        >
-                          {e.value}({e.label})
-                        </Tag>
-                      ))}
-                      {record.metadata.enums.length > 5 && (
-                        <Tag>+{record.metadata.enums.length - 5}更多</Tag>
-                      )}
-                    </Space>
-                  ) : '-'
-                )
-              }
-            ]}
-          />
-        </Card>
-      ))}
+## 三、前端实现
 
-      <div style={{ marginTop: 16, textAlign: 'right' }}>
-        <Button onClick={onCancel}>取消</Button>
-        <Button type="primary" onClick={() => onConfirm(generated_body)}>
-          确认提交
-        </Button>
-      </div>
-    </div>
-  );
+### 3.1 极简化界面
+
+文件：`frontend/src/pages/AutomationWorkflowCreate.tsx`
+
+**核心特性**：
+- ✅ **移除所有表单字段**：不再需要填写任何信息
+- ✅ **表格选择测试用例**：点击行或"选择"按钮
+- ✅ **操作按钮置顶**：启动工作流和重置按钮在表格上方
+- ✅ **实时状态显示**：显示已选择的测试用例
+
+### 3.2 使用流程
+
+```
+1. 访问"自动化工作流"页面
+2. 从表格中点击选择一个测试用例
+3. 点击顶部的"启动智能工作流"按钮
+4. 等待 AI 自动处理：
+   - 加载用例信息
+   - AI 匹配场景
+   - 读取模块配置
+   - AI 生成测试数据
+   - 自动校验数据
+5. 如需人工审核：
+   - 在弹窗中查看 AI 生成的数据
+   - 查看校验错误提示
+   - 修正错误的字段值
+   - 点击"确认提交"
+6. 完成！
+```
+
+### 3.3 前端代码示例
+
+```typescript
+// 启动工作流（极简化版本）
+const handleSubmit = async () => {
+  if (!selectedTestCase) {
+    message.error('请先选择一个测试用例');
+    return;
+  }
+
+  setLoading(true);
+  try {
+    // 只需传递测试用例ID
+    const response = await api.post('/automation/workflow/start', {
+      test_case_id: selectedTestCase.id,
+      scenario_type: 'API'
+    });
+
+    const data = response.data;
+    setThreadId(data.thread_id);
+    setWorkflowState(data);
+
+    if (data.need_human_review) {
+      message.info('AI 已生成测试数据，请进行人工审核');
+      setReviewModalVisible(true);
+    } else if (data.status === 'completed') {
+      message.success('自动化用例创建成功！');
+    }
+  } catch (error) {
+    message.error(`创建失败: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
 };
 ```
 
-### 2.7 优化后流程图
+---
+
+## 四、配置说明
+
+### 4.1 前置准备（一次性配置）
+
+#### 1. 配置默认模块 ID
+
+在「系统配置」页面添加配置：
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                    create_case_with_fields_v2()                       │
-├──────────────────────────────────────────────────────────────────────┤
-│  步骤1: get_scene_cases(scene_id)                                    │
-│         ↓ 获取场景用例列表                                            │
-│                                                                      │
-│  步骤2: select_best_case_by_ai(test_case_info, scene_cases)          │
-│         ↓ AI选择最匹配模板                                            │
-│                                                                      │
-│  步骤3: get_case_detail(usercase_id)                                 │
-│         ↓ 获取模板详情，提取 header, circulation                      │
-│                                                                      │
-│  步骤3.5: 新增 - 获取字段元数据                                        │
-│         ↓ _fetch_field_metadata(scene_id)                            │
-│         ↓ 获取枚举值 + 联动规则                                        │
-│                                                                      │
-│  步骤4: generate_case_body_by_ai_v2(...)                             │
-│         ↓ AI生成测试数据（带枚举约束 + 联动规则）                        │
-│                                                                      │
-│  步骤4.5: 新增 - 校验数据有效性                                        │
-│         ↓ validator.validate_all(generated_body)                     │
-│         ↓ 检查枚举值、联动规则、必填字段                                │
-│                                                                      │
-│  步骤5: 判断是否需要人工确认                                           │
-│         ↓ 无问题或不需要确认 → 直接创建用例                             │
-│         ↓ 有问题且需要确认 → 返回前端展示                               │
-│                                                                      │
-│  前端确认流程:                                                        │
-│         - 显示AI生成的数据                                             │
-│         - 高亮显示有问题的字段                                         │
-│         - 用户编辑修正                                                 │
-│         - 确认后调用 confirm-submit API                               │
-└──────────────────────────────────────────────────────────────────────┘
+配置键: AUTOMATION_PLATFORM_MODULE_ID
+配置值: 你的模块ID（如：MOD_123）
+描述: 自动化测试平台的默认模块ID
 ```
 
-### 2.8 关键技术点
+#### 2. 创建场景
 
-#### 2.8.1 枚举值太多时的处理策略
+在「场景管理」页面创建场景：
 
-```python
-def _filter_enums_by_context(self, metadata: Dict, context: Dict) -> Dict:
-    """
-    动态筛选枚举值，避免token超限
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| 场景编号 | 必填，唯一标识 | SCENE_CLAIM_001 |
+| 场景名称 | 必填，用于 AI 匹配 | 理赔流程 |
+| 业务线 | 可选，优先匹配 | 健康险 |
+| 渠道 | 可选 | 直销 |
+| 模块 | 可选 | 理赔模块 |
+| 状态 | 必须启用 | 启用 |
 
-    策略：
-    1. 先传入核心字段的枚举值（如业务线、渠道）
-    2. 根据已选值，逐步补充关联字段的枚举值
-    3. AI生成时，先让AI选择核心字段，再根据选择补充后续
-    """
-    pass
-```
+#### 3. 创建测试用例
 
-#### 2.8.2 联动规则的两步生成策略
+在「用例管理」页面创建测试用例，包含：
+- 标题
+- 描述
+- 前置条件
+- 测试步骤
+- 预期结果
+- 测试类型
+- 优先级
 
-```python
-async def generate_body_with_linkage(
-    self,
-    header_fields,
-    test_case_info,
-    field_metadata
-):
-    """
-    分两步处理联动关系：
+### 4.2 AI 匹配逻辑
 
-    第一步：生成核心字段的值（不含联动）
-    第二步：根据已选值，动态补充枚举值，生成联动字段
-    """
-    # Step 1: 生成不依赖其他字段的字段值
-    step1_result = await self._generate_independent_fields(...)
+**场景匹配策略**：
+1. 查询所有 `is_active=True` 的场景
+2. 优先筛选业务线相同的场景
+3. 调用 `ai_service.select_best_scenario()`
+4. AI 分析测试用例的标题、描述、业务线等
+5. 返回最匹配的场景
+6. 使用场景的 `scenario_code` 作为 `scene_id`
 
-    # Step 2: 根据step1结果，筛选枚举值，生成联动字段
-    filtered_metadata = self._filter_enums_by_context(
-        field_metadata,
-        step1_result
-    )
+**模块ID读取策略**：
+1. 从 `system_config` 表查询配置键 `AUTOMATION_PLATFORM_MODULE_ID`
+2. 读取 `config_value` 字段
+3. 自动填充到工作流状态
 
-    step2_result = await self._generate_dependent_fields(
-        filtered_metadata,
-        step1_result
-    )
+---
 
-    return self._merge_results(step1_result, step2_result)
+## 五、人工审核功能
+
+### 5.1 触发条件
+
+数据校验发现以下问题时，工作流会暂停等待人工审核：
+- ❌ 枚举值无效（不在可选范围内）
+- ❌ 联动规则违反（应隐藏的字段有值、应必填的字段为空）
+- ❌ 必填字段缺失
+
+### 5.2 审核界面功能
+
+**HumanReviewModal 组件特性**：
+- ✅ 显示校验汇总信息（总数、有效数、问题数）
+- ✅ 高亮显示有问题的字段
+- ✅ 展示详细错误信息和修正建议
+- ✅ 提供枚举值下拉选择器
+- ✅ 支持快速选择常用枚举值（Tag点击）
+- ✅ 内联编辑测试数据
+- ✅ 三种审核操作：
+  - 确认提交（approved/modified）
+  - 拒绝重新生成（rejected）
+  - 取消
+
+### 5.3 审核流程
+
+```typescript
+// 提交审核结果
+const handleReviewComplete = async (reviewData: any) => {
+  try {
+    const response = await api.post(
+      `/automation/workflow/${threadId}/review`,
+      {
+        review_status: reviewData.review_status,  // approved/modified/rejected
+        corrected_body: reviewData.corrected_body,
+        feedback: reviewData.feedback
+      }
+    );
+
+    if (response.data.status === 'completed') {
+      message.success('自动化用例创建成功！');
+    }
+  } catch (error) {
+    message.error('提交审核失败');
+  }
+};
 ```
 
 ---
 
-## 三、实施步骤
+## 六、核心优势
 
-| 阶段 | 内容 | 工作量 |
-|------|------|--------|
-| **阶段1** | 与自动化平台方确认字段元数据API | 1天 |
-| **阶段2** | 新增 `field_metadata_service.py` 和 `body_validator.py` | 2天 |
-| **阶段3** | 优化 `generate_case_body_by_ai` 添加枚举约束 | 1天 |
-| **阶段4** | 新增后端API `create-with-confirm` 和 `confirm-submit` | 1天 |
-| **阶段5** | 前端确认界面开发 | 2天 |
-| **阶段6** | 联调测试 | 2天 |
+### 6.1 用户体验优势
 
----
+| 优势 | 说明 |
+|------|------|
+| **极简操作** | 只需选择测试用例，点击启动 |
+| **零配置** | 不需要记忆模块ID、场景ID |
+| **智能匹配** | AI 自动选择最佳场景和模板 |
+| **自动校验** | 三层校验确保数据质量 |
+| **人工把关** | 数据有问题时支持人工修正 |
+| **流程可控** | 支持暂停、恢复、重试 |
 
-## 四、功能清单
+### 6.2 技术优势
 
-### 4.1 AI生成时约束枚举值
-- [ ] 从自动化平台获取字段枚举值
-- [ ] 在AI Prompt中添加枚举值约束
-- [ ] 枚举值过多时动态筛选
-
-### 4.2 AI生成时处理联动关系
-- [ ] 从自动化平台获取联动规则
-- [ ] 在AI Prompt中添加联动规则说明
-- [ ] 实现联动规则的两步生成策略
-
-### 4.3 生成后校验数据有效性
-- [ ] 实现 BodyValidator 校验服务
-- [ ] 校验枚举值是否有效
-- [ ] 校验联动规则是否满足
-- [ ] 校验必填字段是否填写
-
-### 4.4 前端界面人工确认
-- [ ] 显示AI生成的测试数据
-- [ ] 高亮显示有问题的字段
-- [ ] 展示可选值下拉框
-- [ ] 允许用户编辑修正
-- [ ] 确认后提交到自动化平台
+| 优势 | 说明 |
+|------|------|
+| **状态持久化** | 使用 LangGraph Checkpointer 持久化状态 |
+| **Human-in-the-Loop** | 天然支持人工介入 |
+| **条件分支** | 根据校验结果动态决定流程 |
+| **错误恢复** | 支持重试和降级策略 |
+| **可观测性** | 每个节点输入输出可追踪 |
 
 ---
 
-## 五、相关文档
+## 七、故障排查
 
-- [自动化平台集成](./AUTOMATION_PLATFORM_INTEGRATION.md)
-- [AI智能生成测试数据](./AI_GENERATE_BODY_DATA.md)
-- [用例数据结构说明](./CASE_DATA_STRUCTURE.md)
+### 7.1 常见问题
+
+**Q1: 启动工作流时报"未找到可用场景"错误**
+
+A: 确保：
+1. 在「场景管理」中至少创建了一个场景
+2. 场景状态为"启用"（`is_active=True`）
+3. 场景编号 `scenario_code` 已正确填写
+
+**Q2: 启动工作流时报"模块ID未配置"错误**
+
+A: 在「系统配置」页面添加配置：
+```
+配置键: AUTOMATION_PLATFORM_MODULE_ID
+配置值: 你的模块ID
+```
+
+**Q3: AI 匹配的场景不准确**
+
+A: 检查：
+1. 测试用例的业务线字段是否填写
+2. 场景的业务线是否与测试用例匹配
+3. 场景名称、描述是否清晰准确
+
+**Q4: 数据校验总是失败**
+
+A: 确认：
+1. 自动化平台的字段元数据 API 是否正常
+2. 枚举值和联动规则是否正确配置
+3. 查看控制台日志中的详细校验错误
+
+---
+
+## 八、技术细节
+
+### 8.1 文件清单
+
+**后端文件**：
+- `backend/app/services/automation_workflow_service.py` - LangGraph 工作流服务（628行）
+- `backend/app/services/field_metadata_service.py` - 字段元数据服务（271行）
+- `backend/app/services/body_validator.py` - 数据校验服务（318行）
+- `backend/app/api/v1/endpoints/automation_workflow.py` - API 端点（211行）
+- `backend/app/schemas/automation.py` - 请求/响应模型（169行）
+
+**前端文件**：
+- `frontend/src/pages/AutomationWorkflowCreate.tsx` - 主页面（简化版）
+- `frontend/src/components/HumanReviewModal.tsx` - 人工审核弹窗（354行）
+
+**测试脚本**：
+- `backend/scripts/test_langgraph_workflow.py` - 端到端测试（240行）
+
+### 8.2 依赖版本
+
+```txt
+langgraph==1.0.7
+langchain==1.2.8
+langchain-openai==0.3.11
+```
+
+---
+
+## 九、相关文档
+
+- [LangGraph 工作流详细设计](./LANGGRAPH_WORKFLOW_DESIGN.md)
+- [自动化平台集成说明](./AUTOMATION_PLATFORM_INTEGRATION.md)
+- [AI 选择超时优化](./AI_SELECTION_TIMEOUT_FIX.md)
+- [多模型配置管理](./MULTI_MODEL_CONFIG.md)
+
+---
+
+## 十、更新日志
+
+### v2.0.0 (2026-02-04) - 完全智能化
+
+**重大改进**：
+- ✅ 移除所有手动填写字段
+- ✅ 只需选择测试用例即可启动
+- ✅ AI 自动匹配场景
+- ✅ 自动读取模块配置
+- ✅ 极简化前端界面
+- ✅ 操作步骤从 6 步减少到 2 步
+
+**技术架构**：
+- 新增 3 个智能节点（加载用例、匹配场景、读取配置）
+- 工作流节点从 9 个增加到 12 个
+- 支持完全自动化的端到端流程
+
+### v1.0.0 (2025-11-XX) - LangGraph 初版
+
+- LangGraph 状态机架构
+- 人工审核支持
+- 三层数据校验
+- 9 个工作流节点

@@ -11,6 +11,8 @@ import {
   LogoutOutlined,
   BookOutlined,
   ApiOutlined,
+  RocketOutlined,
+  UnorderedListOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '../stores/authStore'
 import { wsService } from '../services/websocket'
@@ -59,6 +61,16 @@ export default function Layout({ children }: LayoutProps) {
       key: '/scenarios',
       icon: <AppstoreOutlined />,
       label: '场景管理',
+    },
+    {
+      key: '/automation/workflow/create',
+      icon: <RocketOutlined />,
+      label: '自动化工作流',
+    },
+    {
+      key: '/automation/workflow/tasks',
+      icon: <UnorderedListOutlined />,
+      label: '工作流任务',
     },
     {
       key: '/knowledge-base',

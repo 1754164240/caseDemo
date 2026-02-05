@@ -110,7 +110,123 @@ class AutomationPlatformService:
             raise Exception(f"HTTP错误 {response.status_code}: {response.text[:200]}")
         except requests.RequestException as e:
             raise Exception(f"调用自动化平台失败: {str(e)}")
-    
+
+    def get_available_scenarios(self) -> list:
+        """
+        获取所有可用的测试场景列表
+
+        Returns:
+            场景列表
+        """
+        url = f"{self.base_url}/ai/case/queryAllScenes"
+
+        try:
+            print(f"[INFO] 获取可用场景列表")
+            print(f"[INFO] URL: {url}")
+
+            response = requests.get(url, timeout=30)
+
+            print(f"[INFO] 响应状态码: {response.status_code}")
+
+            response.raise_for_status()
+
+            try:
+                result = response.json()
+                if result.get('success'):
+                    return result.get('data', [])
+                else:
+                    raise Exception(result.get('message', '获取场景列表失败'))
+            except ValueError:
+                raise Exception(f"API返回的不是有效的JSON格式")
+
+        except requests.exceptions.ConnectionError:
+            raise Exception(f"无法连接到自动化平台: {url}")
+        except requests.exceptions.Timeout:
+            raise Exception(f"调用自动化平台超时（30秒）: {url}")
+        except requests.RequestException as e:
+            raise Exception(f"获取场景列表失败: {str(e)}")
+
+    def match_scenario_by_ai(
+        self,
+        test_case_info: Dict[str, Any],
+        available_scenarios: List[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        使用AI匹配最佳场景
+
+        Args:
+            test_case_info: 测试用例信息
+            available_scenarios: 可用场景列表
+
+        Returns:
+            匹配的场景，如果没有合适的返回None
+        """
+        try:
+            from app.services.ai_service import get_ai_service
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
+            ai_service = get_ai_service(self.db)
+            if not ai_service:
+                print("[WARNING] AI服务不可用，使用第一个场景")
+                return available_scenarios[0] if available_scenarios else None
+
+            if len(available_scenarios) <= 1:
+                return available_scenarios[0] if available_scenarios else None
+
+            # 构建简化的场景列表
+            scenarios_for_ai = []
+            for s in available_scenarios:
+                scenarios_for_ai.append({
+                    'id': str(s.get('id', '')),
+                    'name': str(s.get('name', ''))[:100],
+                    'desc': str(s.get('description', ''))[:150]
+                })
+
+            test_title = test_case_info.get('title', '')[:100]
+            test_desc = test_case_info.get('description', '')[:200]
+
+            prompt = f"""选择最匹配的测试场景。
+
+【测试用例信息】
+标题：{test_case_info.get('title', '')}
+描述：{test_case_info.get('description', '')}
+前置条件：{test_case_info.get('preconditions', '')}
+测试步骤：{test_case_info.get('test_steps', '')}
+预期结果：{test_case_info.get('expected_result', '')}
+测试类型：{test_case_info.get('test_type', '')}
+
+可选场景（共{len(scenarios_for_ai)}个）：
+{json.dumps(scenarios_for_ai, ensure_ascii=False)}
+
+请只返回选中场景的id，不要返回其他内容。"""
+
+            print(f"[INFO] 使用AI匹配场景（超时限制60秒）...")
+
+            def call_ai():
+                return ai_service.llm.invoke(prompt)
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(call_ai)
+                try:
+                    response = future.result(timeout=160)
+                    selected_id = response.content.strip()
+                    print(f"[INFO] AI选择的场景ID: {selected_id}")
+
+                    for s in available_scenarios:
+                        if str(s.get('id', '')) == selected_id:
+                            return s
+
+                    print(f"[WARNING] AI返回的ID无效，使用第一个场景")
+                    return available_scenarios[0] if available_scenarios else None
+
+                except FutureTimeoutError:
+                    print(f"[WARNING] AI调用超时（60秒），使用第一个场景")
+                    return available_scenarios[0] if available_scenarios else None
+
+        except Exception as e:
+            print(f"[ERROR] AI匹配场景失败: {e}")
+            return available_scenarios[0] if available_scenarios else None
+
     def get_scene_cases(self, scene_id: str) -> list:
         """
         根据场景ID获取用例列表
@@ -253,14 +369,14 @@ class AutomationPlatformService:
             for idx, c in enumerate(available_cases):
                 case_info = {
                     'id': str(c.get('usercaseId', '')),
-                    'name': str(c.get('name', ''))[:100],  # 限制长度
-                    'desc': str(c.get('description', ''))[:150]  # 限制长度
+                    'name': str(c.get('name', '')),  
+                    'desc': str(c.get('description', '')) 
                 }
                 cases_for_ai.append(case_info)
 
             # 简化的prompt，减少token使用
-            test_title = test_case_info.get('title', '')[:100]
-            test_desc = test_case_info.get('description', '')[:200]
+            test_title = test_case_info.get('title', '')
+            test_desc = test_case_info.get('description', '')
 
             prompt = f"""选择最匹配的自动化用例模板。
 
@@ -465,18 +581,23 @@ class AutomationPlatformService:
     ) -> List[Dict[str, Any]]:
         """
         使用AI根据字段定义和测试用例信息生成测试数据(body)
-        
+
         Args:
             header_fields: 字段定义列表（header）
             test_case_info: 测试用例信息
             circulation: 环节信息
-            
+
         Returns:
             生成的测试数据列表（body格式）
         """
         try:
             from app.services.ai_service import get_ai_service
-            
+
+            # 确保 test_case_info 不为 None
+            if test_case_info is None:
+                test_case_info = {}
+                print("[WARNING] test_case_info 为空，使用默认值")
+
             # 传入db以读取数据库配置
             ai_service = get_ai_service(self.db)
             if not ai_service:
@@ -516,7 +637,7 @@ class AutomationPlatformService:
                 circulation_text = "\n循环字段信息：\n" + "\n".join(circ_items)
             
             # 构建AI提示词
-            prompt = f"""你是一个自动化测试专家。请根据以下测试用例信息和字段定义，生成1-3条合理的测试数据。
+            prompt = f"""你是一名拥有10年经验的资深自动化测试工程师和业务领域专家。你的任务是根据提供的【测试用例信息】和【字段定义】，构造覆盖全面、逻辑严密且符合数据类型的自动化数据。
 
 【测试用例信息】
 标题：{test_case_info.get('title', '')}
@@ -534,16 +655,23 @@ class AutomationPlatformService:
 【要求】
 1. 根据测试用例的具体内容，生成符合字段要求的测试数据
 2. 测试数据要真实、合理、符合业务逻辑
-3. 生成1-3条测试数据，每条数据包含一个用例描述(casedesc)和所有字段的值(var)
+3. 生成1-3条测试数据，包含：
+   - casedesc: 测试角度/场景描述（如"正常投保-月缴"、"年龄边界值测试"等）
+   - casezf: 正反案例标识（"1" 表示正向用例，"0" 表示反向/异常用例）
+   - hoperesult: 预期结果（根据测试用例的预期结果，针对每条数据生成具体的预期结果描述）
+   - var: 所有字段的测试数据值
 4. 字段值要符合字段类型和业务含义
 5. 如果字段以 _1, _2 结尾，表示可能有多个同类字段，注意区分
-6. 日期格式使用 YYYYMMDD (如：20250120)
+6. 日期格式使用 YYYYMMDD (如：20250120)，获取当前日期调用工具
 7. 代码类字段要使用正确的业务代码
+8. hoperesult 要具体、明确，参考测试用例的预期结果但针对每条数据的具体场景
 
 请以JSON格式返回，格式如下：
 [
     {{
-        "casedesc": "测试数据描述",
+        "casedesc": "测试角度描述",
+        "casezf": "正",
+        "hoperesult": "该条数据的预期结果",
         "var": {{
             "字段名1": "值1",
             "字段名2": "值2",
@@ -653,18 +781,26 @@ class AutomationPlatformService:
             
             print(f"[INFO] ✅ AI生成了 {len(body_data)} 条测试数据")
 
+            # 从测试用例信息中获取预期结果
+            expected_result = ""
+            if test_case_info:
+                expected_result = test_case_info.get("expected_result", "") or ""
+
             result_body = []
             for idx, item in enumerate(body_data, start=1):
+                # 优先使用AI生成的预期结果，其次使用测试用例的预期结果
+                item_hoperesult = item.get("hoperesult", "") or expected_result or "成功"
+
                 body_item = {
-                    "casezf": "1",
+                    "casezf": item.get("casezf", "正"),
                     "casedesc": item.get("casedesc", f"测试数据{idx}"),
                     "var": item.get("var", {}),
-                    "hoperesult": "成功结案",
-                    "iscaserun": False,
+                    "hoperesult": item_hoperesult,
+                    "iscaserun": item.get("iscaserun", True),
                     "caseBodySN": idx
                 }
                 result_body.append(body_item)
-            
+
             return result_body
             
         except json.JSONDecodeError as e:
@@ -684,7 +820,263 @@ class AutomationPlatformService:
             import traceback
             traceback.print_exc()
             return []
-    
+
+    def generate_case_body_by_ai_v2(
+        self,
+        header_fields: List[Dict],
+        test_case_info: Dict,
+        circulation: List[Dict] = None,
+        field_metadata: Dict = None,
+        linkage_rules: List[Dict] = None,
+        example_body: Dict = None
+    ) -> List[Dict]:
+        """
+        使用AI根据字段定义、枚举值和联动规则生成测试数据（增强版）
+
+        增强功能：
+        1. 支持枚举值约束
+        2. 支持联动规则提示
+        3. 更智能的 Prompt 构建
+
+        Args:
+            header_fields: 字段定义列表
+            test_case_info: 测试用例信息
+            circulation: 环节信息
+            field_metadata: 字段元数据（包含枚举值和联动规则）
+            linkage_rules: 联动规则列表
+            example_body: 示例body数据
+
+        Returns:
+            生成的测试数据列表
+        """
+        if not header_fields or not test_case_info:
+            print(f"[ERROR] header_fields或test_case_info为空，无法生成测试数据")
+            return []
+
+        try:
+            # 使用AI服务
+            from app.services.ai_service import get_ai_service
+            ai_service = get_ai_service(self.db)
+
+            if not ai_service or not ai_service.llm:
+                print(f"[ERROR] AI服务未初始化")
+                return []
+
+            # 构建增强的字段描述（包含枚举值）
+            fields_desc = []
+            for field in header_fields:
+                row_name = field.get('rowName', field.get('row', ''))
+                row = field.get('row', '')
+                field_type = field.get('type', '')
+                flag = field.get('flag', '')
+
+                field_info = f"- {row_name} (字段名: {row}"
+                if field_type:
+                    field_info += f", 类型: {field_type}"
+                if flag:
+                    field_info += f", 标识: {flag}"
+
+                # 添加枚举值（如果有元数据）
+                if field_metadata and field_metadata.get('fields'):
+                    # 查找对应的字段元数据
+                    meta_field = None
+                    for mf in field_metadata['fields']:
+                        if mf.get('row') == row:
+                            meta_field = mf
+                            break
+
+                    if meta_field:
+                        # 添加必填标识
+                        if meta_field.get('required'):
+                            field_info += ", **必填**"
+
+                        # 添加枚举值
+                        enums = meta_field.get('enums', [])
+                        if enums:
+                            # 枚举值太多时，限制显示数量
+                            if len(enums) > 10:
+                                enum_str = ", ".join([f"{e['value']}({e['label']})" for e in enums[:5]])
+                                enum_str += f"... 等共{len(enums)}个选项"
+                            else:
+                                enum_str = ", ".join([f"{e['value']}({e['label']})" for e in enums])
+                            field_info += f", **可选值**: [{enum_str}]"
+
+                field_info += ")"
+                fields_desc.append(field_info)
+
+            fields_text = "\n".join(fields_desc)
+
+            # 构建联动规则描述
+            linkage_text = ""
+            if linkage_rules and len(linkage_rules) > 0:
+                linkage_items = []
+                for rule in linkage_rules[:20]:  # 最多显示20条规则，避免过长
+                    field_name = rule.get('fieldName', rule.get('field', ''))
+
+                    # 处理枚举值联动
+                    if 'whenValue' in rule:
+                        when_value = rule.get('whenValue', '')
+                        show_fields = rule.get('showFields', [])
+                        hide_fields = rule.get('hideFields', [])
+                        required_fields = rule.get('requiredFields', [])
+
+                        if show_fields:
+                            linkage_items.append(
+                                f"- 当【{field_name}】= {when_value} 时，显示字段: {', '.join(show_fields)}"
+                            )
+                        if hide_fields:
+                            linkage_items.append(
+                                f"- 当【{field_name}】= {when_value} 时，隐藏字段: {', '.join(hide_fields)}（这些字段应为空）"
+                            )
+                        if required_fields:
+                            linkage_items.append(
+                                f"- 当【{field_name}】= {when_value} 时，以下字段变为必填: {', '.join(required_fields)}"
+                            )
+
+                    # 处理字段依赖
+                    elif 'triggerField' in rule:
+                        trigger_field = rule.get('triggerField', '')
+                        trigger_value = rule.get('triggerValue', '')
+                        action = rule.get('action', 'show')
+
+                        if action == 'show':
+                            linkage_items.append(
+                                f"- 当【{trigger_field}】= {trigger_value} 时，显示【{field_name}】字段"
+                            )
+
+                if linkage_items:
+                    linkage_text = "\n\n【字段联动规则】（重要！必须遵守）\n" + "\n".join(linkage_items)
+
+            # 示例数据
+            example_block = ""
+            if example_body:
+                try:
+                    import json as _json
+                    example_block = "\n\n【示例body（供参考格式）】\n" + _json.dumps(example_body, ensure_ascii=False, indent=2)
+                except Exception:
+                    example_block = ""
+
+            # 准备环节信息
+            circulation_text = ""
+            if circulation:
+                circ_items = [f"- {c.get('name', '')} ({c.get('vargroup', '')})" for c in circulation]
+                circulation_text = "\n\n【循环字段信息】\n" + "\n".join(circ_items)
+
+            # 构建增强的AI提示词
+            prompt = f"""你是一个自动化测试专家。请根据以下测试用例信息和字段定义（含枚举值和联动规则），生成1-3条合理的测试数据。
+
+【测试用例信息】
+标题：{test_case_info.get('title', '')}
+描述：{test_case_info.get('description', '')}
+前置条件：{test_case_info.get('preconditions', '')}
+测试步骤：{test_case_info.get('test_steps', '')}
+预期结果：{test_case_info.get('expected_result', '')}
+测试类型：{test_case_info.get('test_type', '')}
+优先级：{test_case_info.get('priority', '')}{circulation_text}
+
+【字段定义】（包含枚举值约束）
+{fields_text}{linkage_text}{example_block}
+
+【重要要求】
+1. **必须严格按照字段的枚举值范围生成数据**，不能超出可选范围
+2. **必须遵守字段联动规则**：
+   - 当触发条件满足时，确保联动字段的值符合规则
+   - 当字段被隐藏时，不要填写该字段的值（保留空字符串或null）
+   - 当字段变为必填时，确保填写有效值
+3. 测试数据要真实、合理、符合业务逻辑
+4. 生成1-3条测试数据，覆盖不同的业务场景
+5. 日期格式使用 YYYYMMDD（如：20250204）
+6. 代码类字段要使用正确的业务代码
+7. 如果字段有**必填**标识，必须填写有效值
+
+请以JSON格式返回，格式如下：
+[
+    {{
+        "casedesc": "测试数据描述（简短明确）",
+        "var": {{
+            "字段名1": "值1",
+            "字段名2": "值2",
+            ...
+        }}
+    }}
+]
+
+只返回JSON数组，不要其他说明文字。"""
+
+            print(f"[INFO] 调用AI生成测试数据（增强版，含枚举约束和联动规则）")
+            print(f"[DEBUG] 字段数: {len(header_fields)}, 枚举约束: {len(field_metadata.get('fields', [])) if field_metadata else 0}, 联动规则: {len(linkage_rules) if linkage_rules else 0}")
+
+            # 调用AI
+            response = ai_service.llm.invoke(prompt)
+            response_str = getattr(response, "content", None)
+            if response_str is None:
+                response_str = str(response)
+
+            print(f"[DEBUG] AI响应长度: {len(response_str)} 字符")
+
+            # 解析AI返回的JSON
+            import re
+            candidates = []
+
+            # 尝试多种提取方式
+            detail_match = re.search(r"detail='([\s\S]*?)'(?:\s|$)", response_str)
+            if detail_match:
+                candidate = detail_match.group(1).replace('\\n', '\n').replace("\\'", "'")
+                candidates.append(candidate)
+
+            answer_match = re.search(r"answer='([\s\S]*?)'(?:\s|$)", response_str)
+            if answer_match:
+                candidate = answer_match.group(1).replace('\\n', '\n').replace("\\'", "'")
+                candidates.append(candidate)
+
+            json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response_str)
+            if json_match:
+                candidates.append(json_match.group(1))
+
+            # 兜底直接整体解析
+            candidates.append(response_str.strip())
+
+            # 尝试解析每个候选结果
+            body_list = []
+            for idx, candidate in enumerate(candidates):
+                try:
+                    parsed = json.loads(candidate)
+                    if isinstance(parsed, list) and len(parsed) > 0:
+                        body_list = parsed
+                        print(f"[INFO] 成功从候选{idx+1}解析JSON，生成{len(body_list)}条数据")
+                        break
+                except json.JSONDecodeError:
+                    continue
+
+            if not body_list:
+                print(f"[ERROR] 无法从AI响应中解析JSON")
+                return []
+
+            # 标准化body数据格式
+            standardized_body = []
+            for i, item in enumerate(body_list):
+                body_item = {
+                    "casezf": "1",
+                    "casedesc": item.get('casedesc', f'测试数据{i+1}'),
+                    "var": item.get('var', {}),
+                    "hoperesult": item.get('hoperesult', '成功结案'),
+                    "iscaserun": False,
+                    "caseBodySN": i + 1
+                }
+                standardized_body.append(body_item)
+
+            print(f"[INFO] 成功生成{len(standardized_body)}条测试数据（增强版）")
+            return standardized_body
+
+        except json.JSONDecodeError as e:
+            print(f"[ERROR] 解析AI返回的JSON失败: {e}")
+            return []
+        except Exception as e:
+            print(f"[ERROR] AI生成测试数据失败（增强版）: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
     def create_case_with_fields(
         self,
         name: str,

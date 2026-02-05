@@ -20,4 +20,5 @@ class User(Base):
     # 关系
     knowledge_documents = relationship("KnowledgeDocument", back_populates="creator")
     qa_records = relationship("QARecord", back_populates="creator")
+    workflow_tasks = relationship("WorkflowTask", back_populates="user")
 

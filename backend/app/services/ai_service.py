@@ -13,7 +13,7 @@ from langgraph.graph import StateGraph, END, START
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.tools.date_tools import current_date_tool, current_datetime_tool
+from app.tools.date_tools import current_date_tool, current_datetime_tool, current_date_yyyymmdd_tool
 
 
 class GraphState(ExtTypedDict):
@@ -172,11 +172,7 @@ class AIService:
         config = {"configurable": {"thread_id": "default"}}
 
         # 如果问题涉及日期/时间, 直接调用工具并将结果注入上下文，保证使用工具输出
-        time_context = self._maybe_get_time_context(prompt)
         messages = [{"role": "user", "content": prompt}]
-        if time_context:
-            messages.insert(0, {"role": "system", "content": time_context})
-
         result = self.agent_executor.invoke(
             {"messages": messages},
             config=config,
@@ -188,30 +184,14 @@ class AIService:
 
     def _build_agent_executor(self):
         """创建结构化输出 Agent（参考 LangChain structured_output Quickstart）"""
-        tools = [current_date_tool, current_datetime_tool]
-        system_prompt = (
-            "你是一个可靠的助手。所有涉及日期/时间的回答必须调用提供的工具获取，"
-            "不要凭空猜测。时间统一使用东八区（北京/上海）时区。"
-        )
+        tools = [current_date_tool, current_datetime_tool, current_date_yyyymmdd_tool]
         return create_agent(
             model=self.llm,
-            system_prompt=system_prompt,
             tools=tools,
             context_schema=AgentContext,
             response_format=ToolStrategy(AgentResponseFormat),
         )
 
-    def _maybe_get_time_context(self, prompt: str) -> str:
-        """简单检测是否需要时间信息，必要时主动调用工具避免模型忽略工具"""
-        lower = prompt.lower()
-        keywords = ["date", "time", "today", "now", "日期", "时间", "今天", "几点", "几号"]
-        if any(k in lower for k in keywords):
-            # 优先返回带时间的上下文，提示来自工具
-            # StructuredTool 需要使用 .invoke() 方法调用
-            current_dt = current_datetime_tool.invoke({})
-            current_d = current_date_tool.invoke({})
-            return f"当前日期（东八区）：{current_d}，当前时间（东八区）：{current_dt}。"
-        return ""
         
     def get_embedding(self, text: str) -> List[float]:
         """获取文本嵌入向量"""

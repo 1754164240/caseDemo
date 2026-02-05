@@ -10,6 +10,8 @@ import Scenarios from './pages/Scenarios'
 import Settings from './pages/Settings'
 import KnowledgeBase from './pages/KnowledgeBase'
 import Profile from './pages/Profile'
+import { AutomationWorkflowCreate } from './pages/AutomationWorkflowCreate'
+import WorkflowTasks from './pages/WorkflowTasks'
 
 function App() {
   const { token } = useAuthStore()
@@ -26,6 +28,8 @@ function App() {
         <Route path="/test-cases" element={<TestCases />} />
         <Route path="/scenarios" element={<Scenarios />} />
         <Route path="/knowledge-base" element={<KnowledgeBase />} />
+        <Route path="/automation/workflow/create" element={<AutomationWorkflowCreate />} />
+        <Route path="/automation/workflow/tasks" element={<WorkflowTasks />} />
         <Route path="/settings" element={
           <AdminRoute>
             <Settings />

@@ -331,3 +331,39 @@ export const scenariosAPI = {
   // 切换场景状态
   toggleStatus: (id: number) => api.post(`/scenarios/${id}/toggle-status`),
 }
+
+// 自动化工作流任务 API
+export const workflowTasksAPI = {
+  // 启动异步工作流
+  start: (data: {
+    test_case_id: number
+    name?: string
+    module_id?: string
+    scene_id?: string
+    scenario_type?: string
+    description?: string
+  }) => api.post('/automation/workflow/start', data),
+
+  // 查询单个任务状态
+  getTask: (taskId: number) => api.get(`/automation/workflow/tasks/${taskId}`),
+
+  // 查询任务列表
+  listTasks: (params?: {
+    status?: 'pending' | 'processing' | 'reviewing' | 'completed' | 'failed'
+    limit?: number
+    offset?: number
+  }) => api.get('/automation/workflow/tasks', { params }),
+
+  // 提交人工审核
+  submitReview: (threadId: string, data: {
+    review_status: 'approved' | 'modified' | 'rejected'
+    corrected_body?: any[]
+    feedback?: string
+  }) => api.post(`/automation/workflow/${threadId}/review`, data),
+
+  // 查询工作流状态（LangGraph）
+  getState: (threadId: string) => api.get(`/automation/workflow/${threadId}/state`),
+
+  // 查询校验结果
+  getValidation: (threadId: string) => api.get(`/automation/workflow/${threadId}/validation`),
+}

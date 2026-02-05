@@ -86,6 +86,36 @@ class ConnectionManager:
         }
         await self.send_personal_message(notification, user_id)
 
+    async def notify_workflow_progress(self, user_id: int, thread_id: str, step_name: str, step_index: int, total_steps: int, status: str, message: str):
+        """通知工作流进度更新"""
+        notification = {
+            "type": "workflow_progress",
+            "thread_id": thread_id,
+            "step_name": step_name,
+            "step_index": step_index,
+            "total_steps": total_steps,
+            "status": status,  # running, completed, failed
+            "message": message,
+            "progress": int((step_index / total_steps) * 100) if total_steps > 0 else 0
+        }
+        await self.send_personal_message(notification, user_id)
+
 
 manager = ConnectionManager()
 
+
+# 辅助函数：发送消息给指定用户
+async def send_message_to_user(user_id: int, message_type: str, data: dict):
+    """
+    发送消息给指定用户
+
+    Args:
+        user_id: 用户ID
+        message_type: 消息类型
+        data: 消息数据
+    """
+    message = {
+        "type": message_type,
+        "data": data
+    }
+    await manager.send_personal_message(message, user_id)
