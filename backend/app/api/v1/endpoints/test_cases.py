@@ -634,17 +634,22 @@ def generate_automation_case(
     
     # 如果没有传module_id，从系统配置读取
     if not module_id:
+        print(f"[INFO] module_id未传入，尝试从系统配置读取...")
         module_id_config = db.query(SystemConfig).filter(
             SystemConfig.config_key == "AUTOMATION_PLATFORM_MODULE_ID"
         ).first()
-        
+
         if module_id_config and module_id_config.config_value:
             module_id = module_id_config.config_value
+            print(f"[INFO] ✅ 从系统配置读取到 module_id: {module_id}")
         else:
+            print(f"[ERROR] ❌ 系统配置中未找到 AUTOMATION_PLATFORM_MODULE_ID")
             raise HTTPException(
                 status_code=400,
                 detail="模块ID未提供，且系统配置中未配置默认模块ID，请先在系统配置中配置自动化测试平台的模块ID"
             )
+    else:
+        print(f"[INFO] 使用传入的 module_id: {module_id}")
     
     # 查询测试用例及其关联信息
     test_case = db.query(TestCase).join(TestPoint).join(Requirement).filter(
