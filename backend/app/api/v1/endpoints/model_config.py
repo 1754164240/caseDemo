@@ -13,6 +13,7 @@ from app.schemas.model_config import (
     SetDefaultModelRequest
 )
 from app.api.deps import get_current_active_superuser
+from app.services.ai_service import clear_ai_service_cache
 
 router = APIRouter()
 
@@ -197,6 +198,9 @@ def create_model_config(
     db.commit()
     db.refresh(db_config)
 
+    # 模型配置变更，清除 AIService 缓存
+    clear_ai_service_cache()
+
     # 返回脱敏后的配置
     return ModelConfigResponse(
         id=db_config.id,
@@ -256,6 +260,9 @@ def update_model_config(
     db.commit()
     db.refresh(db_config)
 
+    # 模型配置变更，清除 AIService 缓存
+    clear_ai_service_cache()
+
     return ModelConfigResponse(
         id=db_config.id,
         name=db_config.name,
@@ -298,7 +305,10 @@ def delete_model_config(
     
     db.delete(db_config)
     db.commit()
-    
+
+    # 模型配置变更，清除 AIService 缓存
+    clear_ai_service_cache()
+
     return {"message": "模型配置已删除"}
 
 
@@ -327,7 +337,10 @@ def set_default_model(
     target_config.is_default = True
     
     db.commit()
-    
+
+    # 默认模型变更，清除 AIService 缓存
+    clear_ai_service_cache()
+
     return {
         "message": "默认模型已更新",
         "model_id": request.model_id,

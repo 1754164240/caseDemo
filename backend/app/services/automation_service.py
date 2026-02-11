@@ -580,18 +580,22 @@ class AutomationPlatformService:
         example_body: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """
-        使用AI根据字段定义和测试用例信息生成测试数据(body)
+        使用 Agent + Tools 模式生成测试数据(body)
+
+        Agent 可通过工具自主获取日期、查询枚举值、校验数据，
+        使用 ToolStrategy + CaseBodyResponse 结构化输出替代手动 JSON 解析。
 
         Args:
             header_fields: 字段定义列表（header）
             test_case_info: 测试用例信息
             circulation: 环节信息
+            example_body: 示例body数据
 
         Returns:
             生成的测试数据列表（body格式）
         """
         try:
-            from app.services.ai_service import get_ai_service
+            from app.services.ai_service import get_ai_service, AgentContext
 
             # 确保 test_case_info 不为 None
             if test_case_info is None:
@@ -603,41 +607,133 @@ class AutomationPlatformService:
             if not ai_service:
                 print("[WARNING] AI服务不可用，返回空body")
                 return []
-            
-            # 准备字段信息描述
-            fields_desc = []
-            for field in header_fields:
-                row_name = field.get('rowName', field.get('row', ''))
-                row = field.get('row', '')
-                field_type = field.get('type', '')
-                flag = field.get('flag', '')
-                
-                field_info = f"- {row_name} (字段名: {row}"
-                if field_type:
-                    field_info += f", 类型: {field_type}"
-                if flag:
-                    field_info += f", 标识: {flag}"
-                field_info += ")"
-                fields_desc.append(field_info)
-            
-            fields_text = "\n".join(fields_desc)
 
+            # --- 步骤1: 获取字段元数据（用于工具注入）---
+            field_metadata = None
+            try:
+                from app.services.field_metadata_service import FieldMetadataService
+                metadata_svc = FieldMetadataService(self)
+                scene_id = test_case_info.get('scene_id')
+                if scene_id:
+                    field_metadata = metadata_svc.fetch_field_metadata(scene_id)
+                    print(f"[INFO] 获取到字段元数据: {len(field_metadata.get('fields', []))} 个字段")
+            except Exception as meta_err:
+                print(f"[WARNING] 获取字段元数据失败，工具将无枚举约束: {meta_err}")
+
+            # --- 步骤2: 构建 Agent ---
+            usercase_id = test_case_info.get('usercase_id', '') or test_case_info.get('usercaseId', '')
+            case_body_agent = ai_service.build_case_body_agent(
+                field_metadata=field_metadata, base_url=self.base_url, usercase_id=str(usercase_id)
+            )
+
+            # --- 步骤3: 预先查询字段变量定义，嵌入提示词 ---
+            fields_text = ""
+            field_variables_data = None
+            try:
+                if self.base_url and usercase_id:
+                    url = f"{self.base_url}/ai/case/variables/{usercase_id}"
+                    print(f"[INFO] 预查询字段变量: GET {url}")
+                    resp = requests.get(url, timeout=15)
+                    resp.raise_for_status()
+                    api_result = resp.json()
+                    if api_result.get("success") and api_result.get("data"):
+                        field_variables_data = api_result["data"]
+                        print(f"[INFO] 预查询到 {len(field_variables_data)} 个字段分组")
+            except Exception as var_err:
+                print(f"[WARNING] 预查询字段变量失败，降级使用 header_fields: {var_err}")
+
+            if field_variables_data:
+                # 使用 API 返回的完整字段变量构建描述
+                # 根据 getdatatype 区分：
+                #   "0" 固定值 → AI 需要填写，展示 dataKey/flag 供查询
+                #   "1" 变量引用 / "2" 系统函数 / "4" 自定义函数 / "6" 关联变量 → 保持原值不改
+                #   "3" 随机取值 → AI 可从枚举中选值
+                fields_desc = []
+                fixed_fields = []  # getdatatype=0/3，AI 需要填值的字段
+                auto_fields = []   # getdatatype=1/2/4/6，保持原值的字段
+                for group in field_variables_data:
+                    group_name = group.get("name", group.get("vargroup", ""))
+                    vargroup = group.get("vargroup", "")
+                    group_fixed = []
+                    group_auto = []
+                    for var in group.get("var", []):
+                        var_code = var.get("varCode", "")
+                        var_name = var.get("varName", "")
+                        data = var.get("data", "")
+                        data_key = var.get("dataKey")
+                        flag = var.get("flag")
+                        get_data_type = str(var.get("getdatatype", "0"))
+
+                        # 字段名使用 变量组_变量代码 格式
+                        full_field_name = f"{vargroup}_{var_code}" if vargroup else var_code
+
+                        if get_data_type in ("0", "3"):
+                            # 固定值/随机取值：AI 需要填写
+                            field_info = f"- {var_name} (字段名: {full_field_name}"
+                            if data:
+                                field_info += f", 默认值: {data}"
+                            if data_key:
+                                field_info += f", dataKey: {data_key}"
+                            if flag:
+                                field_info += f", flag: {flag}"
+                            field_info += ")"
+                            group_fixed.append(field_info)
+                        else:
+                            # 变量引用/系统函数/自定义函数/关联变量：保持原值
+                            type_label = {"1": "变量引用", "2": "系统函数", "4": "自定义函数", "6": "关联变量"}.get(get_data_type, f"类型{get_data_type}")
+                            if get_data_type in ("2", "4"):
+                                # 系统函数/自定义函数：data 是函数ID
+                                group_auto.append(f"- {var_name} (字段名: {full_field_name}, {type_label}, 函数ID: {data})")
+                            else:
+                                group_auto.append(f"- {var_name} (字段名: {full_field_name}, {type_label}, 固定值: {data})")
+
+                    if group_fixed or group_auto:
+                        fields_desc.append(f"\n【{group_name}（{vargroup}）】")
+                        if group_fixed:
+                            fields_desc.extend(group_fixed)
+                            fixed_fields.extend(group_fixed)
+                        if group_auto:
+                            fields_desc.extend(group_auto)
+                            auto_fields.extend(group_auto)
+
+                fields_text = "\n".join(fields_desc)
+                print(f"[INFO] 字段分类: {len(fixed_fields)} 个需AI填值, {len(auto_fields)} 个保持原值")
+            else:
+                # 降级：使用 header_fields 构建简单字段描述
+                fields_desc = []
+                for field in header_fields:
+                    row_name = field.get('rowName', field.get('row', ''))
+                    row = field.get('row', '')
+                    field_type = field.get('type', '')
+                    flag = field.get('flag', '')
+
+                    field_info = f"- {row_name} (字段名: {row}"
+                    if field_type:
+                        field_info += f", 类型: {field_type}"
+                    if flag:
+                        field_info += f", 标识: {flag}"
+                    field_info += ")"
+                    fields_desc.append(field_info)
+                fields_text = "\n".join(fields_desc)
+
+            # --- 步骤4: 构建示例和环节信息 ---
             example_block = ""
             if example_body:
                 try:
-                    import json as _json
-                    example_block = "\n【示例body（供参考）】\n" + _json.dumps(example_body, ensure_ascii=False, indent=2)
+                    example_block = "\n【示例body（供参考）】\n" + json.dumps(
+                        example_body, ensure_ascii=False, indent=2
+                    )
                 except Exception:
                     example_block = ""
-            
-            # 准备环节信息
+
             circulation_text = ""
             if circulation:
                 circ_items = [f"- {c.get('name', '')} ({c.get('vargroup', '')})" for c in circulation]
                 circulation_text = "\n循环字段信息：\n" + "\n".join(circ_items)
-            
-            # 构建AI提示词
-            prompt = f"""你是一名拥有10年经验的资深自动化测试工程师和业务领域专家。你的任务是根据提供的【测试用例信息】和【字段定义】，构造覆盖全面、逻辑严密且符合数据类型的自动化数据。
+
+            # --- 步骤5: 构建 Agent Prompt ---
+            prompt = f"""你是一名拥有10年经验的资深自动化测试工程师和业务领域专家。
+你的任务是根据提供的【测试用例信息】和【字段定义】，构造覆盖全面、逻辑严密且符合数据类型的自动化测试数据。
 
 【测试用例信息】
 标题：{test_case_info.get('title', '')}
@@ -652,174 +748,229 @@ class AutomationPlatformService:
 【字段定义】
 {fields_text}{example_block}
 
+【工作流程】
+1. 仔细阅读上方【字段定义】，了解每个字段的名称、默认值、dataKey和flag
+2. 调用 current_date_yyyymmdd 工具获取今天的日期，用于日期类字段
+3. 对于有 dataKey 的字段，调用 query_enum_values 工具查询有效枚举值（传入 dataKey 值）
+4. 对于有 flag 的字段，调用 query_linkage_rules 工具查询关联选项（传入 flag 值）
+5. 对于标记为"系统函数"或"自定义函数"的字段，如需了解函数用途，调用 query_function_info 工具查询（传入函数ID）
+6. 如需了解必填字段，调用 query_required_fields 工具
+7. 根据以上信息生成 1-3 条测试数据
+8. 生成后调用 validate_body_data 工具校验每条数据（传入格式 {{"var": {{"字段名": "值"}}}}）
+9. 如果校验有错误，修正数据后重新校验，直到通过
+
 【要求】
-1. 根据测试用例的具体内容，生成符合字段要求的测试数据
-2. 测试数据要真实、合理、符合业务逻辑
-3. 生成1-3条测试数据，包含：
-   - casedesc: 测试角度/场景描述（如"正常投保-月缴"、"年龄边界值测试"等）
-   - casezf: 正反案例标识（"1" 表示正向用例，"0" 表示反向/异常用例）
-   - hoperesult: 预期结果（根据测试用例的预期结果，针对每条数据生成具体的预期结果描述）
-   - var: 所有字段的测试数据值
-4. 字段值要符合字段类型和业务含义
-5. 如果字段以 _1, _2 结尾，表示可能有多个同类字段，注意区分
-6. 日期格式使用 YYYYMMDD (如：20250120)，获取当前日期调用工具
+1. 测试数据要真实、合理、符合业务逻辑
+2. 字段值必须符合枚举约束（如有）
+3. 标记为"变量引用"、"系统函数"、"自定义函数"、"关联变量"的字段，必须保持其原始值不变（变量引用/关联变量保持固定值，系统函数/自定义函数保持函数ID）
+4. 只对没有标记这些类型的普通字段（有默认值/dataKey/flag的）进行测试数据生成
+5. 必填字段不能为空
+6. 日期格式使用 YYYYMMDD
 7. 代码类字段要使用正确的业务代码
-8. hoperesult 要具体、明确，参考测试用例的预期结果但针对每条数据的具体场景
+8. 如果字段以 _1, _2 结尾，表示可能有多个同类字段，注意区分
+9. hoperesult 要具体明确，针对每条数据的场景"""
 
-请以JSON格式返回，格式如下：
-[
-    {{
-        "casedesc": "测试角度描述",
-        "casezf": "正",
-        "hoperesult": "该条数据的预期结果",
-        "var": {{
-            "字段名1": "值1",
-            "字段名2": "值2",
-            ...
-        }}
-    }}
-]
-
-只返回JSON数组，不要其他说明文字。"""
-            
-            print(f"[INFO] 调用AI生成测试数据（基于{len(header_fields)}个字段）")
-            print(f"[DEBUG] ========== AI Prompt 开始 ==========")
+            print(f"[INFO] 调用 Agent 生成测试数据（基于{len(header_fields)}个字段）")
+            print(f"[DEBUG] ========== Agent Prompt 开始 ==========")
             print(prompt)
-            print(f"[DEBUG] ========== AI Prompt 结束 ==========")
-            
-            # 调用AI：这里直接调用 llm.invoke，避免 agent/tool_calls 返回 messages 结构导致无法解析JSON
-            response = ai_service.llm.invoke(prompt)
-            response_str = getattr(response, "content", None)
-            if response_str is None:
-                response_str = str(response)
-            
-            print(f"[DEBUG] ========== AI Response 开始 ==========")
-            print(response_str)
-            print(f"[DEBUG] (AI Response 总长度: {len(response_str)} 字符)")
-            print(f"[DEBUG] ========== AI Response 结束 ==========")
-            
-            # 解析AI返回的JSON
-            import re
-            
-            candidates = []
+            print(f"[DEBUG] ========== Agent Prompt 结束 ==========")
 
-            # 优先取 detail='[...]'（常见Agent响应包含结构化JSON）
-            detail_match = re.search(r"detail='([\s\S]*?)'(?:\s|$)", response_str)
-            if detail_match:
-                candidate = detail_match.group(1).replace('\\n', '\n').replace("\\'", "'")
-                candidates.append(candidate)
-                print(f"[DEBUG] 从detail字段提取JSON: {len(candidate)} 字符")
+            # --- 步骤6: 调用 Agent（带超时保护）---
+            config = {"configurable": {"thread_id": "case_body_gen"}}
+            messages = [{"role": "user", "content": prompt}]
 
-            # 其次尝试 answer='...'（有时 answer 不是JSON，若detail可用则已覆盖）
-            answer_match = re.search(r"answer='([\s\S]*?)'(?:\s|$)", response_str)
-            if answer_match:
-                candidate = answer_match.group(1).replace('\\n', '\n').replace("\\'", "'")
-                candidates.append(candidate)
-                print(f"[DEBUG] 从answer字段提取JSON: {len(candidate)} 字符")
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+            import time as _time
 
-            # 再尝试 markdown 代码块
-            json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response_str)
-            if json_match:
-                candidates.append(json_match.group(1))
+            def call_agent():
+                return case_body_agent.invoke(
+                    {"messages": messages},
+                    config=config,
+                    context=AgentContext(user_id="default")
+                )
 
-            # 兜底直接整体解析
-            candidates.append(response_str.strip())
-            
-            last_error = None
-            body_data = None
-
-            def _parse_candidate(raw: str):
-                raw = raw.strip()
-                if not raw:
-                    raise json.JSONDecodeError("空字符串", raw, 0)
-                parse_targets = [raw]
-
-                if "\\n" in raw or "\\r\\n" in raw:
-                    normalized = raw.replace("\\r\\n", "\n").replace("\\n", "\n")
-                    if normalized not in parse_targets:
-                        parse_targets.append(normalized)
-
-                last_inner_error = None
-                for target in parse_targets:
-                    try:
-                        return json.loads(target)
-                    except json.JSONDecodeError as err:
-                        last_inner_error = err
-                        continue
-
-                for target in parse_targets:
-                    start_idx = target.find('[')
-                    end_idx = target.rfind(']') + 1
-                    if start_idx != -1 and end_idx > start_idx:
-                        try:
-                            return json.loads(target[start_idx:end_idx])
-                        except json.JSONDecodeError as err:
-                            last_inner_error = err
-                    start_idx = target.find('{')
-                    end_idx = target.rfind('}') + 1
-                    if start_idx != -1 and end_idx > start_idx:
-                        try:
-                            return json.loads(target[start_idx:end_idx])
-                        except json.JSONDecodeError as err:
-                            last_inner_error = err
-
-                raise last_inner_error or json.JSONDecodeError("无法解析JSON字符串", raw, 0)
-
-            for candidate in candidates:
+            agent_start = _time.time()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(call_agent)
                 try:
-                    body_data = _parse_candidate(candidate)
-                    break
-                except json.JSONDecodeError as parse_error:
-                    last_error = parse_error
+                    result = future.result(timeout=300)  # 300秒超时
+                    elapsed = _time.time() - agent_start
+                    print(f"[INFO] Agent 调用完成，耗时: {elapsed:.1f}秒")
+                except FutureTimeoutError:
+                    elapsed = _time.time() - agent_start
+                    print(f"[WARNING] Agent 调用超时（{elapsed:.1f}秒），降级为直接 LLM 调用")
+                    return self._fallback_generate_case_body(
+                        header_fields, test_case_info, circulation, example_body
+                    )
+
+            # --- 步骤7: 提取结构化输出 ---
+            structured_response = None
+            if isinstance(result, dict):
+                structured_response = result.get("structured_response")
+
+            body_items = None
+            if structured_response and hasattr(structured_response, 'body'):
+                # ToolStrategy 成功返回 CaseBodyResponse 实例
+                body_items = structured_response.body
+                print(f"[INFO] Agent 结构化输出成功: {len(body_items)} 条数据")
+            else:
+                # 降级: 尝试从 output/文本中解析
+                print("[WARNING] 未获取到结构化输出，尝试降级解析")
+                body_items = self._fallback_parse_agent_output(result)
+                if not body_items:
+                    print("[WARNING] 降级解析也失败，回退到直接 LLM 调用")
+                    return self._fallback_generate_case_body(
+                        header_fields, test_case_info, circulation, example_body
+                    )
+
+            # --- 步骤8: 转换为标准 body 格式 ---
+            expected_result = test_case_info.get("expected_result", "") or ""
+            result_body = []
+            for idx, item in enumerate(body_items, start=1):
+                # 兼容 Pydantic 模型和普通字典
+                if hasattr(item, 'model_dump'):
+                    item_dict = item.model_dump()
+                elif isinstance(item, dict):
+                    item_dict = item
+                else:
                     continue
 
-            if body_data is None:
-                raise last_error or json.JSONDecodeError("没有可用的JSON字符串", "", 0)
-            
-            if not isinstance(body_data, list):
-                body_data = [body_data]
-            
-            print(f"[INFO] ✅ AI生成了 {len(body_data)} 条测试数据")
-
-            # 从测试用例信息中获取预期结果
-            expected_result = ""
-            if test_case_info:
-                expected_result = test_case_info.get("expected_result", "") or ""
-
-            result_body = []
-            for idx, item in enumerate(body_data, start=1):
-                # 优先使用AI生成的预期结果，其次使用测试用例的预期结果
-                item_hoperesult = item.get("hoperesult", "") or expected_result or "成功"
-
                 body_item = {
-                    "casezf": item.get("casezf", "正"),
-                    "casedesc": item.get("casedesc", f"测试数据{idx}"),
-                    "var": item.get("var", {}),
-                    "hoperesult": item_hoperesult,
-                    "iscaserun": item.get("iscaserun", True),
+                    "casezf": item_dict.get("casezf", "正"),
+                    "casedesc": item_dict.get("casedesc", f"测试数据{idx}"),
+                    "var": item_dict.get("var", {}),
+                    "hoperesult": item_dict.get("hoperesult", "") or expected_result or "成功",
+                    "iscaserun": item_dict.get("iscaserun", True),
                     "caseBodySN": idx
                 }
                 result_body.append(body_item)
 
+            print(f"[INFO] 最终生成 {len(result_body)} 条测试数据")
             return result_body
-            
-        except json.JSONDecodeError as e:
-            print(f"[ERROR] 解析AI返回的JSON失败: {e}")
-            try:
-                if 'response_str' in locals():
-                    print(f"[DEBUG] AI返回内容: {response_str[:500]}")
-                elif 'response' in locals():
-                    print(f"[DEBUG] AI返回内容: {str(response)[:500]}")
-                else:
-                    print(f"[DEBUG] response未定义")
-            except Exception as ex:
-                print(f"[DEBUG] 无法打印AI返回内容: {ex}")
-            return []
+
         except Exception as e:
-            print(f"[ERROR] AI生成测试数据失败: {type(e).__name__}: {e}")
+            print(f"[ERROR] Agent 生成测试数据失败: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
-            return []
+
+            # --- 降级策略: 回退到直接 llm.invoke ---
+            print("[WARNING] Agent 模式失败，降级为直接 LLM 调用")
+            return self._fallback_generate_case_body(
+                header_fields, test_case_info, circulation, example_body
+            )
+
+    def _fallback_parse_agent_output(self, result) -> list:
+        """降级解析: 当 ToolStrategy 未返回结构化输出时，从文本中提取"""
+        import re
+
+        raw = ""
+        if isinstance(result, dict):
+            raw = str(result.get("output", ""))
+        else:
+            raw = str(result)
+
+        # 尝试 markdown 代码块
+        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', raw)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group(1))
+                if isinstance(parsed, dict) and 'body' in parsed:
+                    return parsed['body']
+                if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+        # 尝试直接 JSON 数组
+        start = raw.find('[')
+        end = raw.rfind(']') + 1
+        if start != -1 and end > start:
+            try:
+                parsed = json.loads(raw[start:end])
+                if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+        print("[ERROR] 降级解析也失败")
+        return []
+
+    def _fallback_generate_case_body(
+        self,
+        header_fields: list,
+        test_case_info: dict,
+        circulation: list = None,
+        example_body: dict = None
+    ) -> list:
+        """
+        终极降级: 回退到直接 llm.invoke 模式
+        当 Agent 模式完全失败时使用，保证系统可用性
+        """
+        try:
+            from app.services.ai_service import get_ai_service
+            ai_service = get_ai_service(self.db)
+            if not ai_service:
+                return []
+
+            # 构建简化字段描述
+            fields_desc = []
+            for field in header_fields:
+                row_name = field.get('rowName', field.get('row', ''))
+                row = field.get('row', '')
+                fields_desc.append(f"- {row_name} (字段名: {row})")
+            fields_text = "\n".join(fields_desc)
+
+            # 内嵌日期，不依赖工具
+            from datetime import datetime, timezone, timedelta
+            cn_tz = timezone(timedelta(hours=8))
+            today = datetime.now(cn_tz).strftime("%Y%m%d")
+
+            prompt = f"""生成1-3条自动化测试数据。今天日期: {today}
+
+测试用例: {test_case_info.get('title', '')}
+描述: {test_case_info.get('description', '')}
+预期结果: {test_case_info.get('expected_result', '')}
+
+字段定义:
+{fields_text}
+
+返回JSON数组格式:
+[{{"casezf":"正","casedesc":"描述","hoperesult":"预期结果","var":{{"字段名":"值"}}}}]
+
+只返回JSON数组。"""
+
+            print("[INFO] 降级模式: 直接调用 LLM 生成测试数据")
+            response = ai_service.llm.invoke(prompt)
+            content = getattr(response, 'content', str(response))
+
+            # 简化解析
+            start = content.find('[')
+            end = content.rfind(']') + 1
+            if start != -1 and end > start:
+                body_data = json.loads(content[start:end])
+                if not isinstance(body_data, list):
+                    body_data = [body_data]
+
+                expected_result = test_case_info.get("expected_result", "") or ""
+                result_body = []
+                for idx, item in enumerate(body_data, start=1):
+                    result_body.append({
+                        "casezf": item.get("casezf", "正"),
+                        "casedesc": item.get("casedesc", f"测试数据{idx}"),
+                        "var": item.get("var", {}),
+                        "hoperesult": item.get("hoperesult", "") or expected_result or "成功",
+                        "iscaserun": True,
+                        "caseBodySN": idx
+                    })
+                print(f"[INFO] 降级模式生成 {len(result_body)} 条测试数据")
+                return result_body
+
+        except Exception as fallback_err:
+            print(f"[ERROR] 降级 LLM 调用也失败: {fallback_err}")
+            import traceback
+            traceback.print_exc()
+
+        return []
 
     def generate_case_body_by_ai_v2(
         self,

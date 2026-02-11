@@ -3,7 +3,7 @@
 """
 import os
 from app.services.document_parser import DocumentParser
-from app.services.ai_service import ai_service
+from app.services.ai_service import get_ai_service
 from app.core.config import settings
 
 def test_document_parsing():
@@ -79,7 +79,7 @@ def test_document_parsing():
             print()
         
         try:
-            test_points = ai_service.extract_test_points(text)
+            test_points = get_ai_service().extract_test_points(text)
             
             print(f"✅ 测试点提取成功")
             print(f"   提取到 {len(test_points)} 个测试点")

@@ -192,7 +192,41 @@ class AIService:
             response_format=ToolStrategy(AgentResponseFormat),
         )
 
-        
+    def build_case_body_agent(self, field_metadata: Optional[dict] = None, base_url: str = "", usercase_id: str = ""):
+        """
+        获取测试数据生成专用 Agent（带缓存）
+
+        Agent 结构（tools + response_format）固定不变，缓存后复用。
+        每次调用只更新工具的元数据（metadata/base_url/usercase_id）。
+
+        Args:
+            field_metadata: 字段元数据（包含枚举值和联动规则），
+                            如果提供，则注入到枚举和校验工具中
+            base_url: 自动化平台 API 基础地址，用于枚举值和字段变量实时查询
+            usercase_id: 用例ID，用于字段变量查询工具
+        Returns:
+            配置好的 Agent executor
+        """
+        from app.tools import ALL_CASE_BODY_TOOLS, setup_metadata_for_tools
+        from app.schemas.case_body import CaseBodyResponse
+
+        # 每次调用都更新工具元数据（元数据随请求变化）
+        setup_metadata_for_tools(field_metadata or {}, base_url=base_url, usercase_id=usercase_id)
+
+        # Agent 结构不变，缓存复用
+        if not hasattr(self, '_case_body_agent') or self._case_body_agent is None:
+            print("[INFO] 首次构建 case_body_agent，后续将复用")
+            self._case_body_agent = create_agent(
+                model=self.llm,
+                tools=ALL_CASE_BODY_TOOLS,
+                context_schema=AgentContext,
+                response_format=ToolStrategy(CaseBodyResponse),
+            )
+        else:
+            print("[INFO] 复用缓存的 case_body_agent")
+
+        return self._case_body_agent
+
     def get_embedding(self, text: str) -> List[float]:
         """获取文本嵌入向量"""
         return self.embeddings.embed_query(text)
@@ -591,13 +625,20 @@ class AIService:
             return scenarios[0]
 
 
-# 全局实例（用于不需要 Prompt 配置的场景）
-ai_service = AIService()
+# --- AIService 实例缓存 ---
+# 基于 model_config_id 缓存实例，避免重复初始化 LLM 和 Agent
+import threading
+
+_ai_service_cache: Dict[Any, "AIService"] = {}
+_ai_service_cache_lock = threading.Lock()
 
 
 def get_ai_service(db: Session = None, model_config_id: int = None) -> AIService:
     """
-    获取 AI 服务实例
+    获取 AI 服务实例（带缓存）
+
+    相同 model_config_id 复用同一实例，避免重复初始化 LLM。
+    db 会话每次更新到缓存实例上，保证 Prompt 配置可从当前会话读取。
 
     Args:
         db: 数据库会话（支持 Prompt 配置和模型配置）
@@ -606,4 +647,33 @@ def get_ai_service(db: Session = None, model_config_id: int = None) -> AIService
     Returns:
         AIService 实例
     """
-    return AIService(db=db, model_config_id=model_config_id)
+    cache_key = model_config_id  # None 表示默认配置
+
+    with _ai_service_cache_lock:
+        if cache_key in _ai_service_cache:
+            instance = _ai_service_cache[cache_key]
+            # 更新 db 会话，保证当前请求可读取 Prompt 配置
+            instance.db = db
+            print(f"[INFO] 复用缓存的 AIService 实例 (config_id={cache_key})")
+            return instance
+
+    # 缓存未命中，创建新实例（在锁外创建，避免阻塞其他请求）
+    print(f"[INFO] 创建新的 AIService 实例 (config_id={cache_key})")
+    instance = AIService(db=db, model_config_id=model_config_id)
+
+    with _ai_service_cache_lock:
+        # 双重检查，防止并发创建
+        if cache_key not in _ai_service_cache:
+            _ai_service_cache[cache_key] = instance
+        else:
+            instance = _ai_service_cache[cache_key]
+            instance.db = db
+
+    return instance
+
+
+def clear_ai_service_cache():
+    """清除 AIService 缓存（模型配置变更时调用）"""
+    with _ai_service_cache_lock:
+        _ai_service_cache.clear()
+    print("[INFO] AIService 缓存已清除")
