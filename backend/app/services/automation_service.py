@@ -608,17 +608,9 @@ class AutomationPlatformService:
                 print("[WARNING] AI服务不可用，返回空body")
                 return []
 
-            # --- 步骤1: 获取字段元数据（用于工具注入）---
+            # queryFieldMetadata 已禁用，工具侧不再注入场景元数据
             field_metadata = None
-            try:
-                from app.services.field_metadata_service import FieldMetadataService
-                metadata_svc = FieldMetadataService(self)
-                scene_id = test_case_info.get('scene_id')
-                if scene_id:
-                    field_metadata = metadata_svc.fetch_field_metadata(scene_id)
-                    print(f"[INFO] 获取到字段元数据: {len(field_metadata.get('fields', []))} 个字段")
-            except Exception as meta_err:
-                print(f"[WARNING] 获取字段元数据失败，工具将无枚举约束: {meta_err}")
+
 
             # --- 步骤2: 构建 Agent ---
             usercase_id = test_case_info.get('usercase_id', '') or test_case_info.get('usercaseId', '')
@@ -699,22 +691,42 @@ class AutomationPlatformService:
                 fields_text = "\n".join(fields_desc)
                 print(f"[INFO] 字段分类: {len(fixed_fields)} 个需AI填值, {len(auto_fields)} 个保持原值")
             else:
-                # 降级：使用 header_fields 构建简单字段描述
+                # 降级：使用 header_fields 构建字段描述（尽量提取完整信息）
                 fields_desc = []
+                fixed_fields = []
+                auto_fields = []
                 for field in header_fields:
                     row_name = field.get('rowName', field.get('row', ''))
                     row = field.get('row', '')
-                    field_type = field.get('type', '')
+                    data = field.get('data', '')
+                    data_key = field.get('dataKey')
                     flag = field.get('flag', '')
+                    get_data_type = str(field.get('getdatatype', '0'))
 
-                    field_info = f"- {row_name} (字段名: {row}"
-                    if field_type:
-                        field_info += f", 类型: {field_type}"
-                    if flag:
-                        field_info += f", 标识: {flag}"
-                    field_info += ")"
-                    fields_desc.append(field_info)
+                    if get_data_type in ("0", "3"):
+                        # 固定值/随机取值：AI 需要填写
+                        field_info = f"- {row_name} (字段名: {row}"
+                        if data:
+                            field_info += f", 默认值: {data}"
+                        if data_key:
+                            field_info += f", dataKey: {data_key}"
+                        if flag:
+                            field_info += f", flag: {flag}"
+                        field_info += ")"
+                        fields_desc.append(field_info)
+                        fixed_fields.append(field_info)
+                    else:
+                        # 变量引用/系统函数/自定义函数/关联变量：保持原值
+                        type_label = {"1": "变量引用", "2": "系统函数", "4": "自定义函数", "6": "关联变量"}.get(get_data_type, f"类型{get_data_type}")
+                        if get_data_type in ("2", "4"):
+                            field_info = f"- {row_name} (字段名: {row}, {type_label}, 函数ID: {data})"
+                        else:
+                            field_info = f"- {row_name} (字段名: {row}, {type_label}, 固定值: {data})"
+                        fields_desc.append(field_info)
+                        auto_fields.append(field_info)
+
                 fields_text = "\n".join(fields_desc)
+                print(f"[INFO] 降级模式字段分类: {len(fixed_fields)} 个需AI填值, {len(auto_fields)} 个保持原值")
 
             # --- 步骤4: 构建示例和环节信息 ---
             example_block = ""
@@ -754,21 +766,23 @@ class AutomationPlatformService:
 3. 对于有 dataKey 的字段，调用 query_enum_values 工具查询有效枚举值（传入 dataKey 值）
 4. 对于有 flag 的字段，调用 query_linkage_rules 工具查询关联选项（传入 flag 值）
 5. 对于标记为"系统函数"或"自定义函数"的字段，如需了解函数用途，调用 query_function_info 工具查询（传入函数ID）
-6. 如需了解必填字段，调用 query_required_fields 工具
-7. 根据以上信息生成 1-3 条测试数据
-8. 生成后调用 validate_body_data 工具校验每条数据（传入格式 {{"var": {{"字段名": "值"}}}}）
-9. 如果校验有错误，修正数据后重新校验，直到通过
+6. 对于险种编码/险种名称相关字段，调用 query_risk_config 工具查询险种配置（传入险种编码或名称）
+7. 先识别“当前测试角度”关联的关键字段，只保留这些字段参与赋值
+8. 根据以上信息生成 1-3 条测试数据，var 中仅输出与当前测试角度相关的字段
+9. 生成后调用 validate_body_data 工具校验每条数据（传入格式 {{"var": {{"字段名": "值"}}}}）
+10. 如果校验有错误，修正数据后重新校验，直到通过
 
 【要求】
 1. 测试数据要真实、合理、符合业务逻辑
 2. 字段值必须符合枚举约束（如有）
-3. 标记为"变量引用"、"系统函数"、"自定义函数"、"关联变量"的字段，必须保持其原始值不变（变量引用/关联变量保持固定值，系统函数/自定义函数保持函数ID）
-4. 只对没有标记这些类型的普通字段（有默认值/dataKey/flag的）进行测试数据生成
-5. 必填字段不能为空
-6. 日期格式使用 YYYYMMDD
-7. 代码类字段要使用正确的业务代码
-8. 如果字段以 _1, _2 结尾，表示可能有多个同类字段，注意区分
-9. hoperesult 要具体明确，针对每条数据的场景"""
+3. 仅生成“当前测试角度”相关字段，避免全量填充所有字段
+4. 对于有默认值的字段：如果当前测试角度不涉及，可不在 var 中输出；只有需要覆盖默认值时才输出
+5. 标记为"变量引用"、"系统函数"、"自定义函数"、"关联变量"的字段：如需输出，必须保持原始值不变；不相关可不输出
+6. 必填字段规则：无默认值必须填写；有默认值可不输出（由默认值生效）
+7. 日期格式使用 YYYYMMDD
+8. 代码类字段要使用正确的业务代码
+9. 如果字段以 _1, _2 结尾，表示可能有多个同类字段，注意区分
+10. hoperesult 要具体明确，针对每条数据的场景"""
 
             print(f"[INFO] 调用 Agent 生成测试数据（基于{len(header_fields)}个字段）")
             print(f"[DEBUG] ========== Agent Prompt 开始 ==========")
@@ -835,10 +849,14 @@ class AutomationPlatformService:
                 else:
                     continue
 
+                var_data = self._ensure_minimum_var_fields(
+                    item_dict.get("var", {}),
+                    header_fields
+                )
                 body_item = {
                     "casezf": item_dict.get("casezf", "正"),
                     "casedesc": item_dict.get("casedesc", f"测试数据{idx}"),
-                    "var": item_dict.get("var", {}),
+                    "var": var_data,
                     "hoperesult": item_dict.get("hoperesult", "") or expected_result or "成功",
                     "iscaserun": item_dict.get("iscaserun", True),
                     "caseBodySN": idx
@@ -895,6 +913,39 @@ class AutomationPlatformService:
         print("[ERROR] 降级解析也失败")
         return []
 
+    def _ensure_minimum_var_fields(
+        self,
+        var_data: Any,
+        header_fields: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        确保 var 至少包含 1 个字段。
+
+        说明：
+        1. 不再剔除“等于默认值”的字段，保持模型原始输出
+        2. 当 var 为空时，自动补一个字段，避免出现空 var
+        """
+        if isinstance(var_data, dict) and len(var_data) > 0:
+            return var_data
+        if not header_fields:
+            return {}
+
+        fallback_field_name = ""
+        fallback_field_value: Any = ""
+        for field in header_fields:
+            field_name = field.get("row")
+            if not field_name:
+                continue
+            fallback_field_name = field_name
+            fallback_field_value = field.get("data", "")
+            break
+
+        if not fallback_field_name:
+            return {}
+
+        print(f"[INFO] 当前数据无字段，已补充保底字段: {fallback_field_name}")
+        return {fallback_field_name: fallback_field_value}
+
     def _fallback_generate_case_body(
         self,
         header_fields: list,
@@ -917,7 +968,12 @@ class AutomationPlatformService:
             for field in header_fields:
                 row_name = field.get('rowName', field.get('row', ''))
                 row = field.get('row', '')
-                fields_desc.append(f"- {row_name} (字段名: {row})")
+                data = field.get('data', '')
+                field_info = f"- {row_name} (字段名: {row}"
+                if data is not None and data != "":
+                    field_info += f", 默认值: {data}"
+                field_info += ")"
+                fields_desc.append(field_info)
             fields_text = "\n".join(fields_desc)
 
             # 内嵌日期，不依赖工具
@@ -933,6 +989,11 @@ class AutomationPlatformService:
 
 字段定义:
 {fields_text}
+
+要求:
+1. 仅输出当前测试角度相关字段，不要全量填充
+2. 有默认值的字段如无特殊测试目的可省略
+3. 需要覆盖默认值时再输出该字段的新值
 
 返回JSON数组格式:
 [{{"casezf":"正","casedesc":"描述","hoperesult":"预期结果","var":{{"字段名":"值"}}}}]
@@ -954,10 +1015,14 @@ class AutomationPlatformService:
                 expected_result = test_case_info.get("expected_result", "") or ""
                 result_body = []
                 for idx, item in enumerate(body_data, start=1):
+                    var_data = self._ensure_minimum_var_fields(
+                        item.get("var", {}),
+                        header_fields
+                    )
                     result_body.append({
                         "casezf": item.get("casezf", "正"),
                         "casedesc": item.get("casedesc", f"测试数据{idx}"),
-                        "var": item.get("var", {}),
+                        "var": var_data,
                         "hoperesult": item.get("hoperesult", "") or expected_result or "成功",
                         "iscaserun": True,
                         "caseBodySN": idx
@@ -1134,11 +1199,14 @@ class AutomationPlatformService:
    - 当触发条件满足时，确保联动字段的值符合规则
    - 当字段被隐藏时，不要填写该字段的值（保留空字符串或null）
    - 当字段变为必填时，确保填写有效值
-3. 测试数据要真实、合理、符合业务逻辑
-4. 生成1-3条测试数据，覆盖不同的业务场景
-5. 日期格式使用 YYYYMMDD（如：20250204）
-6. 代码类字段要使用正确的业务代码
-7. 如果字段有**必填**标识，必须填写有效值
+3. 仅生成当前测试角度相关字段，避免全量填充
+4. 对于有默认值的字段，如果当前测试角度不涉及，可不在 var 中输出
+5. 如果要覆盖默认值，才输出该字段并填写新值
+6. 测试数据要真实、合理、符合业务逻辑
+7. 生成1-3条测试数据，覆盖不同的业务场景
+8. 日期格式使用 YYYYMMDD（如：20250204）
+9. 代码类字段要使用正确的业务代码
+10. 如果字段有**必填**标识且无默认值，必须填写有效值
 
 请以JSON格式返回，格式如下：
 [
@@ -1206,10 +1274,14 @@ class AutomationPlatformService:
             # 标准化body数据格式
             standardized_body = []
             for i, item in enumerate(body_list):
+                var_data = self._ensure_minimum_var_fields(
+                    item.get('var', {}),
+                    header_fields
+                )
                 body_item = {
                     "casezf": "1",
                     "casedesc": item.get('casedesc', f'测试数据{i+1}'),
-                    "var": item.get('var', {}),
+                    "var": var_data,
                     "hoperesult": item.get('hoperesult', '成功结案'),
                     "iscaserun": False,
                     "caseBodySN": i + 1
@@ -1329,9 +1401,17 @@ class AutomationPlatformService:
 
         generated_body = []
         if header_fields and test_case_info:
+            # 确保 test_case_info 包含 usercase_id 等关键字段
+            # 用于预查询字段变量 API（/ai/case/variables/{usercaseId}）
+            test_case_info_with_id = {
+                **test_case_info,
+                'usercase_id': selected_usercase_id,
+                'usercaseId': selected_usercase_id,
+                'scene_id': scene_id,
+            }
             generated_body = self.generate_case_body_by_ai(
                 header_fields=header_fields,
-                test_case_info=test_case_info,
+                test_case_info=test_case_info_with_id,
                 circulation=circulation,
                 example_body=example_body  # 传入示例，提升生成质量
             )

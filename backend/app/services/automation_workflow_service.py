@@ -8,9 +8,10 @@ from typing_extensions import TypedDict
 import json
 import os
 import sqlite3
+import requests
 
+from app.core.config import settings
 from .automation_service import get_automation_service
-from .field_metadata_service import FieldMetadataService
 from .body_validator import BodyValidator
 
 
@@ -312,37 +313,51 @@ class AutomationWorkflowService:
         try:
             from app.models.system_config import SystemConfig
 
-            # 从系统配置读取默认模块ID（使用正确的字段名 config_key）
-            config = self.db.query(SystemConfig).filter(
-                SystemConfig.config_key == "default_module_id"
-            ).first()
+            # 优先读取新键 AUTOMATION_PLATFORM_MODULE_ID，兼容旧键 default_module_id
+            configs = self.db.query(SystemConfig).filter(
+                SystemConfig.config_key.in_(["AUTOMATION_PLATFORM_MODULE_ID", "default_module_id"])
+            ).all()
+            config_map = {
+                c.config_key: str(c.config_value).strip()
+                for c in configs
+                if c.config_value is not None and str(c.config_value).strip()
+            }
+            module_id = config_map.get("AUTOMATION_PLATFORM_MODULE_ID") or config_map.get("default_module_id")
 
-            if config and config.config_value:
-                print(f"[工作流] 使用系统配置的模块ID: {config.config_value}")
+            if module_id:
+                print(f"[工作流] 使用系统配置的模块ID: {module_id}")
                 return {
                     **state,
-                    "module_id": config.config_value,
+                    "module_id": module_id,
                     "current_step": "module_loaded",
                     "status": "processing"
                 }
-            else:
-                # 使用默认值
-                default_module = "1"
-                print(f"[工作流] 使用默认模块ID: {default_module}")
+
+            # 数据库未配置时，回退到环境变量
+            env_module_id = (settings.AUTOMATION_PLATFORM_MODULE_ID or "").strip()
+            if env_module_id:
+                print(f"[工作流] 使用环境变量模块ID: {env_module_id}")
                 return {
                     **state,
-                    "module_id": default_module,
+                    "module_id": env_module_id,
                     "current_step": "module_loaded",
                     "status": "processing"
                 }
-        except Exception as e:
-            print(f"[工作流] 读取模块配置失败: {e}")
-            # 使用默认值继续
+
+            print("[工作流] 模块ID未配置（数据库和环境变量都为空）")
             return {
                 **state,
-                "module_id": "1",
-                "current_step": "module_loaded",
-                "status": "processing"
+                "status": "failed",
+                "error": "模块ID未配置：请在系统配置中设置 AUTOMATION_PLATFORM_MODULE_ID，或在环境变量中设置 AUTOMATION_PLATFORM_MODULE_ID",
+                "current_step": "module_load_failed"
+            }
+        except Exception as e:
+            print(f"[工作流] 读取模块配置失败: {e}")
+            return {
+                **state,
+                "status": "failed",
+                "error": f"读取模块配置失败: {str(e)}",
+                "current_step": "module_load_failed"
             }
 
     def _fetch_scene_cases(self, state: AutomationCaseState) -> AutomationCaseState:
@@ -440,7 +455,7 @@ class AutomationWorkflowService:
             }
 
     def _fetch_case_details(self, state: AutomationCaseState) -> AutomationCaseState:
-        """节点6: 获取用例详情和字段元数据"""
+        """节点6: 获取用例详情和字段定义"""
         usercase_id = state.get("selected_usercase_id")
         print(f"[工作流] 步骤6: 获取用例 {usercase_id} 的详情")
 
@@ -457,27 +472,53 @@ class AutomationWorkflowService:
                     "current_step": "fetch_details_failed"
                 }
 
-            # 提取字段定义
-            case_define = case_detail.get("caseDefine", {})
-            header_fields = case_define.get("header", [])
+            # 优先按 variables 接口预查询字段变量定义，组装为 header_fields
+            header_fields = []
+            try:
+                if automation_svc.base_url and usercase_id:
+                    url = f"{automation_svc.base_url}/ai/case/variables/{usercase_id}"
+                    print(f"[工作流] 预查询字段变量: GET {url}")
+                    resp = requests.get(url, timeout=15)
+                    resp.raise_for_status()
+                    api_result = resp.json()
+
+                    if api_result.get("success") and api_result.get("data"):
+                        for group in api_result["data"]:
+                            vargroup = group.get("vargroup", "")
+                            for var in group.get("var", []):
+                                var_code = var.get("varCode", "")
+                                if not var_code:
+                                    continue
+                                full_field_name = f"{vargroup}_{var_code}" if vargroup else var_code
+                                header_fields.append({
+                                    "row": full_field_name,
+                                    "rowName": var.get("varName", full_field_name),
+                                    "data": var.get("data", ""),
+                                    "dataKey": var.get("dataKey"),
+                                    "flag": var.get("flag"),
+                                    "getdatatype": str(var.get("getdatatype", "0")),
+                                    "vargroup": vargroup,
+                                    "varCode": var_code,
+                                })
+                        print(f"[工作流] 预查询到 {len(header_fields)} 个字段定义（来自 variables 接口）")
+            except Exception as var_err:
+                print(f"[工作流] 预查询字段变量失败，降级使用 caseDefine.header: {var_err}")
+
+            # 降级：variables 接口不可用时，使用模板 header
+            if not header_fields:
+                case_define = case_detail.get("caseDefine", {})
+                header_fields = case_define.get("header", [])
+                print(f"[工作流] 降级提取到 {len(header_fields)} 个字段定义（来自 caseDefine.header）")
+
             circulation = state["selected_case"].get("circulation", [])
 
-            print(f"[工作流] 提取到 {len(header_fields)} 个字段定义")
-
-            # 获取字段元数据（枚举值+联动规则）
-            metadata_svc = FieldMetadataService(automation_svc)
-            field_metadata = metadata_svc.fetch_field_metadata(state["scene_id"])
-            linkage_rules = metadata_svc.extract_linkage_rules(field_metadata)
-
-            print(f"[工作流] 获取到 {len(field_metadata.get('fields', []))} 个字段元数据")
+            # 不再按 scene_id 查询字段元数据，统一使用空元数据占位
 
             return {
                 **state,
                 "case_detail": case_detail,
                 "header_fields": header_fields,
                 "circulation": circulation,
-                "field_metadata": field_metadata,
-                "linkage_rules": linkage_rules,
                 "current_step": "details_fetched",
                 "status": "processing"
             }
