@@ -493,6 +493,7 @@ class AutomationWorkflowService:
                                 header_fields.append({
                                     "row": full_field_name,
                                     "rowName": var.get("varName", full_field_name),
+                                    "groupName": group.get("name", ""),
                                     "data": var.get("data", ""),
                                     "dataKey": var.get("dataKey"),
                                     "flag": var.get("flag"),
@@ -546,10 +547,16 @@ class AutomationWorkflowService:
                 if template_body:
                     example_body = template_body[0]
 
+            test_case_info_for_body = {
+                **(state.get("test_case_info") or {}),
+                "scene_id": state.get("scene_id"),
+                "matched_scenario": state.get("matched_scenario"),
+            }
+
             # 调用AI生成
             generated_body = automation_svc.generate_case_body_by_ai(
                 header_fields=state["header_fields"],
-                test_case_info=state.get("test_case_info"),
+                test_case_info=test_case_info_for_body,
                 circulation=state.get("circulation"),
                 example_body=example_body
             )

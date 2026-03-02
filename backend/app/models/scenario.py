@@ -14,6 +14,7 @@ class Scenario(Base):
     business_line = Column(String(50), index=True)  # 业务线：contract(契约)/preservation(保全)/claim(理赔)
     channel = Column(String(100))  # 渠道：线上/线下/移动端等
     module = Column(String(100), index=True)  # 模块
+    test_case_maintenance_rule = Column(Text)  # 用例维护规则
     is_active = Column(Boolean, default=True)  # 是否启用
     
     # 审计字段

@@ -11,6 +11,7 @@ class ScenarioBase(BaseModel):
     business_line: Optional[str] = Field(None, description="业务线：contract(契约)/preservation(保全)/claim(理赔)")
     channel: Optional[str] = Field(None, description="渠道：线上/线下/移动端等")
     module: Optional[str] = Field(None, description="所属模块")
+    test_case_maintenance_rule: Optional[str] = Field(None, description="用例维护规则")
     is_active: bool = Field(True, description="是否启用")
 
 
@@ -27,6 +28,7 @@ class ScenarioUpdate(BaseModel):
     business_line: Optional[str] = None
     channel: Optional[str] = None
     module: Optional[str] = None
+    test_case_maintenance_rule: Optional[str] = None
     is_active: Optional[bool] = None
 
 

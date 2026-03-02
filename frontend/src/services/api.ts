@@ -311,6 +311,7 @@ export const scenariosAPI = {
     business_line?: string
     channel?: string
     module?: string
+    test_case_maintenance_rule?: string
     is_active?: boolean
   }) => api.post('/scenarios/', data),
   
@@ -322,6 +323,7 @@ export const scenariosAPI = {
     business_line?: string
     channel?: string
     module?: string
+    test_case_maintenance_rule?: string
     is_active?: boolean
   }) => api.put(`/scenarios/${id}`, data),
   

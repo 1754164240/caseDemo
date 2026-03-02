@@ -54,6 +54,9 @@ interface FieldMetadata {
   fields: Array<{
     row: string;
     rowName: string;
+    groupName?: string;
+    group_name?: string;
+    vargroup?: string;
     type: string;
     required?: boolean;
     enums?: Array<{ value: string; label: string }>;
@@ -75,6 +78,15 @@ interface WorkflowState {
     }>;
   };
   field_metadata: FieldMetadata;
+  header_fields?: Array<{
+    row: string;
+    rowName: string;
+    groupName?: string;
+    group_name?: string;
+    vargroup?: string;
+    [key: string]: any;
+  }>;
+  [key: string]: any;
 }
 
 interface HumanReviewModalProps {
@@ -185,6 +197,24 @@ export const HumanReviewModal: React.FC<HumanReviewModalProps> = ({
     }
 
     return null;
+  };
+
+  const formatFieldDisplayName = (fieldKey: string) => {
+    const fieldMeta: any = findFieldMetadata(fieldKey);
+    const rowName = String(fieldMeta?.rowName || fieldKey || '').trim();
+    const groupName = String(
+      fieldMeta?.groupName || fieldMeta?.group_name || fieldMeta?.vargroup || ''
+    ).trim();
+
+    if (groupName && rowName) {
+      const prefix = `${groupName}_`;
+      if (rowName.startsWith(prefix)) {
+        return rowName;
+      }
+      return `${groupName}_${rowName}`;
+    }
+
+    return rowName || fieldKey;
   };
 
   // 获取所有字段名（用于动态生成列）
@@ -319,11 +349,10 @@ export const HumanReviewModal: React.FC<HumanReviewModalProps> = ({
 
   // 动态添加字段列
   allFieldKeys.forEach(fieldKey => {
-    const fieldMeta = findFieldMetadata(fieldKey);
     columns.push({
       title: (
         <Tooltip title={fieldKey}>
-          <span>{fieldMeta?.rowName || fieldKey}</span>
+          <span>{formatFieldDisplayName(fieldKey)}</span>
         </Tooltip>
       ),
       dataIndex: ['var', fieldKey],

@@ -378,7 +378,7 @@ class AutomationPlatformService:
             test_title = test_case_info.get('title', '')
             test_desc = test_case_info.get('description', '')
 
-            prompt = f"""选择最匹配的自动化用例模板。
+            prompt = f"""选择最匹配的自动化用例模板，可以根据保险产品、产品类型、相同业务功能点匹配
 
 测试用例：
 标题：{test_title}
@@ -389,7 +389,7 @@ class AutomationPlatformService:
 
 请只返回选中模板的id（usercaseId），不要返回其他内容。"""
 
-            print(f"[INFO] 使用AI选择最佳用例（超时限制180秒）...")
+            print(f"[INFO] 使用AI选择最佳用例（超时限制600秒）...")
             print(f"[DEBUG] 可选用例数量: {len(available_cases)}")
             print(f"[DEBUG] Prompt长度: {len(prompt)} 字符")
 
@@ -400,8 +400,8 @@ class AutomationPlatformService:
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(call_ai)
                 try:
-                    # 180秒超时
-                    response = future.result(timeout=180)
+                    # 600秒超时
+                    response = future.result(timeout=600)
 
                     selected_id = response.content.strip()
                     print(f"[INFO] AI选择的用例ID: {selected_id}")
@@ -416,7 +416,7 @@ class AutomationPlatformService:
                     return available_cases[0] if available_cases else None
 
                 except FutureTimeoutError:
-                    print(f"[WARNING] AI调用超时（180秒），使用第一个用例")
+                    print(f"[WARNING] AI调用超时（600秒），使用第一个用例")
                     return available_cases[0] if available_cases else None
 
         except Exception as e:
@@ -572,6 +572,91 @@ class AutomationPlatformService:
         except requests.RequestException as e:
             raise Exception(f"创建用例和明细失败: {str(e)}")
     
+    def _resolve_test_case_maintenance_rule(self, test_case_info: Optional[Dict[str, Any]]) -> str:
+        """解析用例维护规则（优先使用传入值，缺失时从场景表查询）"""
+        if not isinstance(test_case_info, dict):
+            return ""
+
+        def _normalize_rule(value: Any) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, str):
+                text = value.strip()
+            else:
+                try:
+                    text = str(value).strip()
+                except Exception:
+                    return ""
+            if not text or text.lower() in {"none", "null"}:
+                return ""
+            return text
+
+        candidate_rules = [
+            test_case_info.get("test_case_maintenance_rule"),
+            test_case_info.get("case_maintenance_rule"),
+        ]
+
+        matched_scenario = test_case_info.get("matched_scenario")
+        if isinstance(matched_scenario, dict):
+            candidate_rules.extend([
+                matched_scenario.get("test_case_maintenance_rule"),
+                matched_scenario.get("case_maintenance_rule"),
+            ])
+
+        for rule in candidate_rules:
+            normalized_rule = _normalize_rule(rule)
+            if normalized_rule:
+                return normalized_rule
+
+        scene_id = _normalize_rule(
+            test_case_info.get("scene_id")
+            or test_case_info.get("sceneId")
+            or test_case_info.get("scenario_code")
+        )
+
+        if not scene_id or not self.db:
+            return ""
+
+        try:
+            from app.models.scenario import Scenario
+
+            scenario = self.db.query(Scenario).filter(
+                Scenario.scenario_code == scene_id
+            ).first()
+
+            if not scenario and str(scene_id).isdigit():
+                scenario = self.db.query(Scenario).filter(
+                    Scenario.id == int(scene_id)
+                ).first()
+
+            if scenario:
+                return _normalize_rule(
+                    getattr(scenario, "test_case_maintenance_rule", None)
+                )
+        except Exception as e:
+            print(f"[WARNING] 读取用例维护规则失败: {e}")
+
+        return ""
+
+    def _format_prompt_field_label(
+        self,
+        group_name: Any,
+        field_name: Any,
+        fallback_field_name: Any = ""
+    ) -> str:
+        """格式化提示词中的字段展示名，优先使用“变量组_变量名”"""
+        group_text = str(group_name).strip() if group_name is not None else ""
+        field_text = str(field_name).strip() if field_name is not None else ""
+        fallback_text = str(fallback_field_name).strip() if fallback_field_name is not None else ""
+
+        if group_text and field_text:
+            group_prefix = f"{group_text}_"
+            if field_text.startswith(group_prefix):
+                return field_text
+            return f"{group_text}_{field_text}"
+
+        return field_text or fallback_text
+
     def generate_case_body_by_ai(
         self,
         header_fields: List[Dict[str, Any]],
@@ -658,10 +743,13 @@ class AutomationPlatformService:
 
                         # 字段名使用 变量组_变量代码 格式
                         full_field_name = f"{vargroup}_{var_code}" if vargroup else var_code
+                        display_field_name = self._format_prompt_field_label(
+                            group_name, var_name, full_field_name
+                        )
 
                         if get_data_type in ("0", "3"):
                             # 固定值/随机取值：AI 需要填写
-                            field_info = f"- {var_name} (字段名: {full_field_name}"
+                            field_info = f"- {display_field_name} (字段名: {full_field_name}"
                             if data:
                                 field_info += f", 默认值: {data}"
                             if data_key:
@@ -675,9 +763,9 @@ class AutomationPlatformService:
                             type_label = {"1": "变量引用", "2": "系统函数", "4": "自定义函数", "6": "关联变量"}.get(get_data_type, f"类型{get_data_type}")
                             if get_data_type in ("2", "4"):
                                 # 系统函数/自定义函数：data 是函数ID
-                                group_auto.append(f"- {var_name} (字段名: {full_field_name}, {type_label}, 函数ID: {data})")
+                                group_auto.append(f"- {display_field_name} (字段名: {full_field_name}, {type_label}, 函数ID: {data})")
                             else:
-                                group_auto.append(f"- {var_name} (字段名: {full_field_name}, {type_label}, 固定值: {data})")
+                                group_auto.append(f"- {display_field_name} (字段名: {full_field_name}, {type_label}, 固定值: {data})")
 
                     if group_fixed or group_auto:
                         fields_desc.append(f"\n【{group_name}（{vargroup}）】")
@@ -698,6 +786,8 @@ class AutomationPlatformService:
                 for field in header_fields:
                     row_name = field.get('rowName', field.get('row', ''))
                     row = field.get('row', '')
+                    group_name = field.get('groupName', field.get('group_name', ''))
+                    display_field_name = self._format_prompt_field_label(group_name, row_name, row)
                     data = field.get('data', '')
                     data_key = field.get('dataKey')
                     flag = field.get('flag', '')
@@ -705,7 +795,7 @@ class AutomationPlatformService:
 
                     if get_data_type in ("0", "3"):
                         # 固定值/随机取值：AI 需要填写
-                        field_info = f"- {row_name} (字段名: {row}"
+                        field_info = f"- {display_field_name} (字段名: {row}"
                         if data:
                             field_info += f", 默认值: {data}"
                         if data_key:
@@ -719,9 +809,9 @@ class AutomationPlatformService:
                         # 变量引用/系统函数/自定义函数/关联变量：保持原值
                         type_label = {"1": "变量引用", "2": "系统函数", "4": "自定义函数", "6": "关联变量"}.get(get_data_type, f"类型{get_data_type}")
                         if get_data_type in ("2", "4"):
-                            field_info = f"- {row_name} (字段名: {row}, {type_label}, 函数ID: {data})"
+                            field_info = f"- {display_field_name} (字段名: {row}, {type_label}, 函数ID: {data})"
                         else:
-                            field_info = f"- {row_name} (字段名: {row}, {type_label}, 固定值: {data})"
+                            field_info = f"- {display_field_name} (字段名: {row}, {type_label}, 固定值: {data})"
                         fields_desc.append(field_info)
                         auto_fields.append(field_info)
 
@@ -743,6 +833,15 @@ class AutomationPlatformService:
                 circ_items = [f"- {c.get('name', '')} ({c.get('vargroup', '')})" for c in circulation]
                 circulation_text = "\n循环字段信息：\n" + "\n".join(circ_items)
 
+            maintenance_rule_text = self._resolve_test_case_maintenance_rule(test_case_info)
+            maintenance_rule_block = ""
+            if maintenance_rule_text:
+                maintenance_rule_block = (
+                    "\n\n【用例维护规则】（必须优先遵守）\n"
+                    f"{maintenance_rule_text}"
+                )
+                print("[INFO] 已将用例维护规则注入生成提示词")
+
             # --- 步骤5: 构建 Agent Prompt ---
             prompt = f"""你是一名拥有10年经验的资深自动化测试工程师和业务领域专家。
 你的任务是根据提供的【测试用例信息】和【字段定义】，构造覆盖全面、逻辑严密且符合数据类型的自动化测试数据。
@@ -758,7 +857,7 @@ class AutomationPlatformService:
 {circulation_text}
 
 【字段定义】
-{fields_text}{example_block}
+{fields_text}{example_block}{maintenance_rule_block}
 
 【工作流程】
 1. 仔细阅读上方【字段定义】，了解每个字段的名称、默认值、dataKey和flag
@@ -766,7 +865,7 @@ class AutomationPlatformService:
 3. 对于有 dataKey 的字段，调用 query_enum_values 工具查询有效枚举值（传入 dataKey 值）
 4. 对于有 flag 的字段，调用 query_linkage_rules 工具查询关联选项（传入 flag 值）
 5. 对于标记为"系统函数"或"自定义函数"的字段，如需了解函数用途，调用 query_function_info 工具查询（传入函数ID）
-6. 对于险种编码/险种名称相关字段，调用 query_risk_config 工具查询险种配置（传入险种编码或名称）
+6. 对于险种编码/险种名称/缴费年期/缴费年期标识/保障年期/保障年期标识/缴费方式相关字段，调用 query_risk_config 工具查询险种配置（传入险种编码或名称）
 7. 先识别“当前测试角度”关联的关键字段，只保留这些字段参与赋值
 8. 根据以上信息生成 1-3 条测试数据，var 中仅输出与当前测试角度相关的字段
 9. 生成后调用 validate_body_data 工具校验每条数据（传入格式 {{"var": {{"字段名": "值"}}}}）
@@ -776,13 +875,14 @@ class AutomationPlatformService:
 1. 测试数据要真实、合理、符合业务逻辑
 2. 字段值必须符合枚举约束（如有）
 3. 仅生成“当前测试角度”相关字段，避免全量填充所有字段
-4. 对于有默认值的字段：如果当前测试角度不涉及，可不在 var 中输出；只有需要覆盖默认值时才输出
+4. 对于有默认值的字段：如果当前测试角度不涉及，可不在 var 中输出；只有需要覆盖默认值时才输出,险种编码或名称字段不取默认值
 5. 标记为"变量引用"、"系统函数"、"自定义函数"、"关联变量"的字段：如需输出，必须保持原始值不变；不相关可不输出
 6. 必填字段规则：无默认值必须填写；有默认值可不输出（由默认值生效）
 7. 日期格式使用 YYYYMMDD
 8. 代码类字段要使用正确的业务代码
 9. 如果字段以 _1, _2 结尾，表示可能有多个同类字段，注意区分
-10. hoperesult 要具体明确，针对每条数据的场景"""
+10. hoperesult 要具体明确，针对每条数据的场景
+11. 如果提供了【用例维护规则】，必须优先遵守；与一般建议冲突时以该规则为准"""
 
             print(f"[INFO] 调用 Agent 生成测试数据（基于{len(header_fields)}个字段）")
             print(f"[DEBUG] ========== Agent Prompt 开始 ==========")
@@ -807,7 +907,7 @@ class AutomationPlatformService:
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(call_agent)
                 try:
-                    result = future.result(timeout=300)  # 300秒超时
+                    result = future.result(timeout=600)  # 600秒超时
                     elapsed = _time.time() - agent_start
                     print(f"[INFO] Agent 调用完成，耗时: {elapsed:.1f}秒")
                 except FutureTimeoutError:
@@ -968,8 +1068,10 @@ class AutomationPlatformService:
             for field in header_fields:
                 row_name = field.get('rowName', field.get('row', ''))
                 row = field.get('row', '')
+                group_name = field.get('groupName', field.get('group_name', ''))
+                display_field_name = self._format_prompt_field_label(group_name, row_name, row)
                 data = field.get('data', '')
-                field_info = f"- {row_name} (字段名: {row}"
+                field_info = f"- {display_field_name} (字段名: {row}"
                 if data is not None and data != "":
                     field_info += f", 默认值: {data}"
                 field_info += ")"
@@ -981,6 +1083,15 @@ class AutomationPlatformService:
             cn_tz = timezone(timedelta(hours=8))
             today = datetime.now(cn_tz).strftime("%Y%m%d")
 
+            maintenance_rule_text = self._resolve_test_case_maintenance_rule(test_case_info)
+            maintenance_rule_block = ""
+            if maintenance_rule_text:
+                maintenance_rule_block = (
+                    "\n用例维护规则（必须优先遵守）:\n"
+                    f"{maintenance_rule_text}\n"
+                )
+                print("[INFO] 降级模式已注入用例维护规则")
+
             prompt = f"""生成1-3条自动化测试数据。今天日期: {today}
 
 测试用例: {test_case_info.get('title', '')}
@@ -989,11 +1100,13 @@ class AutomationPlatformService:
 
 字段定义:
 {fields_text}
+{maintenance_rule_block}
 
 要求:
 1. 仅输出当前测试角度相关字段，不要全量填充
 2. 有默认值的字段如无特殊测试目的可省略
 3. 需要覆盖默认值时再输出该字段的新值
+4. 如果提供了用例维护规则，必须优先遵守
 
 返回JSON数组格式:
 [{{"casezf":"正","casedesc":"描述","hoperesult":"预期结果","var":{{"字段名":"值"}}}}]

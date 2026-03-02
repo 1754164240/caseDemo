@@ -38,7 +38,8 @@ def list_scenarios(
             or_(
                 ScenarioModel.scenario_code.ilike(search_pattern),
                 ScenarioModel.name.ilike(search_pattern),
-                ScenarioModel.description.ilike(search_pattern)
+                ScenarioModel.description.ilike(search_pattern),
+                ScenarioModel.test_case_maintenance_rule.ilike(search_pattern)
             )
         )
     

@@ -39,6 +39,7 @@ interface Scenario {
   business_line?: string
   channel?: string
   module?: string
+  test_case_maintenance_rule?: string
   is_active: boolean
   created_at: string
   updated_at?: string
@@ -210,6 +211,14 @@ export default function Scenarios() {
       render: (value) => value || '-',
     },
     {
+      title: '用例维护规则',
+      dataIndex: 'test_case_maintenance_rule',
+      key: 'test_case_maintenance_rule',
+      width: 260,
+      ellipsis: true,
+      render: (value) => value || '-',
+    },
+    {
       title: '状态',
       dataIndex: 'is_active',
       key: 'is_active',
@@ -343,7 +352,7 @@ export default function Scenarios() {
           dataSource={scenarios}
           rowKey="id"
           loading={loading}
-          scroll={{ x: 1350 }}
+          scroll={{ x: 1650 }}
           pagination={{
             showSizeChanger: true,
             showQuickJumper: true,
@@ -387,6 +396,13 @@ export default function Scenarios() {
             <TextArea
               rows={4}
               placeholder="请输入场景描述"
+            />
+          </Form.Item>
+
+          <Form.Item label="用例维护规则" name="test_case_maintenance_rule">
+            <TextArea
+              rows={4}
+              placeholder="请输入用例维护规则"
             />
           </Form.Item>
 
@@ -453,6 +469,9 @@ export default function Scenarios() {
             </Descriptions.Item>
             <Descriptions.Item label="模块">
               {selectedScenario.module || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="用例维护规则">
+              {selectedScenario.test_case_maintenance_rule || '-'}
             </Descriptions.Item>
             <Descriptions.Item label="状态">
               <Tag color={selectedScenario.is_active ? 'green' : 'red'}>
