@@ -8,12 +8,13 @@ from app.core.config import settings
 from app.api.v1 import api_router
 from app.db.session import engine
 from app.db.base import Base, import_models
+from app.utils.file_paths import get_upload_dir_path
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    os.makedirs(get_upload_dir_path(), exist_ok=True)
     # Import all models to register them with SQLAlchemy
     import_models()
     # Create tables
@@ -40,8 +41,9 @@ app.add_middleware(
 )
 
 # Mount uploads directory
-if os.path.exists(settings.UPLOAD_DIR):
-    app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+upload_dir = get_upload_dir_path()
+if upload_dir.exists():
+    app.mount("/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
 
 # Include API router
 app.include_router(api_router, prefix="/api/v1")

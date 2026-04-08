@@ -10,13 +10,13 @@ pydantic-settings==2.11.0
 email-validator==2.1.0
 
 # LangChain & LangGraph (1.0.2 版本)
-langchain==1.2.8
+langchain==1.2.15
 langchain-openai==1.1.7
 langchain-deepseek==1.0.1
 langchain-community==1.0.0a1
-langchain-core==1.2.8
+langchain-core==1.2.15
 langchain-milvus==0.3.3
-langgraph==1.0.7
+langgraph==1.1.6
 openai==2.16.0
 
 # Vector DB
@@ -31,7 +31,7 @@ pdfminer.six==20231228
 unstructured==0.5.9
 
 # WebSocket
-websockets==12.0
+websockets==14.1
 
 # Auth & Security
 python-jose[cryptography]==3.3.0
@@ -40,5 +40,5 @@ bcrypt==4.0.1
 
 # Utils
 aiofiles==23.2.1
-httpx==0.26.0
+httpx==0.28.1
 

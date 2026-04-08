@@ -33,6 +33,7 @@ from app.schemas.knowledge_base import (
 from app.services.rag_service import RAGService
 from app.api.deps import get_current_active_user
 from app.core.config import settings
+from app.utils.file_paths import get_upload_dir_path
 
 
 router = APIRouter()
@@ -61,7 +62,7 @@ async def upload_document(
         
         if file:
             # 创建上传目录
-            upload_dir = os.path.join(settings.UPLOAD_DIR, "knowledge_base")
+            upload_dir = get_upload_dir_path() / "knowledge_base"
             os.makedirs(upload_dir, exist_ok=True)
             
             # 生成文件名
@@ -69,7 +70,7 @@ async def upload_document(
             file_name = file.filename
             file_ext = os.path.splitext(file_name)[1]
             safe_filename = f"{timestamp}_{file_name}"
-            file_path = os.path.join(upload_dir, safe_filename)
+            file_path = str(upload_dir / safe_filename)
             
             # 保存文件
             with open(file_path, "wb") as f:
@@ -451,4 +452,3 @@ def submit_feedback(
         success=True,
         message="反馈提交成功"
     )
-

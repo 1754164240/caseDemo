@@ -14,6 +14,8 @@ from langchain_community.document_loaders import (
     UnstructuredFileLoader,
 )
 
+from app.utils.file_paths import resolve_file_path
+
 
 class DocumentParser:
     """文档解析服务，负责不同格式文档的文本提取"""
@@ -367,7 +369,8 @@ class DocumentParser:
 
         parser = parsers.get(file_type.lower())
         if parser:
-            return parser(file_path)
+            resolved_path = str(resolve_file_path(file_path))
+            return parser(resolved_path)
         return None
 
     @staticmethod

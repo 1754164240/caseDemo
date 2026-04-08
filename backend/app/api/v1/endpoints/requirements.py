@@ -27,6 +27,7 @@ from app.services.test_point_history_service import (
     record_history_entry,
 )
 from sqlalchemy import func, or_
+from app.utils.file_paths import build_upload_file_path, resolve_file_path
 
 router = APIRouter()
 
@@ -68,16 +69,23 @@ def cleanup_failed_requirement(
     remove_requirement: bool = False,
 ):
     """删除失败需求的文件、向量与数据库记录"""
+    resolved_file_path = None
+    if file_path:
+        try:
+            resolved_file_path = resolve_file_path(file_path)
+        except ValueError:
+            resolved_file_path = None
+
     try:
         milvus_service.delete_by_requirement(requirement_id)
         print(f"[INFO] 已清理需求 {requirement_id} 的 Milvus 向量")
     except Exception as milvus_error:
         print(f"[WARNING] 清理 Milvus 失败（需求 {requirement_id}）: {milvus_error}")
 
-    if remove_requirement and file_path and os.path.exists(file_path):
+    if remove_requirement and resolved_file_path and resolved_file_path.exists():
         try:
-            os.remove(file_path)
-            print(f"[INFO] 已删除失败需求文件: {file_path}")
+            os.remove(resolved_file_path)
+            print(f"[INFO] 已删除失败需求文件: {resolved_file_path}")
         except Exception as file_error:
             print(f"[WARNING] 删除文件失败: {file_error}")
 
@@ -258,16 +266,16 @@ async def create_requirement(
     # 保存文件
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{timestamp}_{file.filename}"
-    file_path = os.path.join(settings.UPLOAD_DIR, filename)
-    
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    
-    with open(file_path, "wb") as buffer:
+    file_path, absolute_file_path = build_upload_file_path(filename)
+
+    os.makedirs(absolute_file_path.parent, exist_ok=True)
+
+    with open(absolute_file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    
-    file_size = os.path.getsize(file_path)
+
+    file_size = os.path.getsize(absolute_file_path)
     if file_size > settings.MAX_UPLOAD_SIZE:
-        os.remove(file_path)
+        os.remove(absolute_file_path)
         max_mb = settings.MAX_UPLOAD_SIZE // (1024 * 1024)
         raise HTTPException(
             status_code=400,
@@ -452,7 +460,8 @@ def download_requirement(
         raise HTTPException(status_code=404, detail="Requirement not found")
 
     # 检查文件是否存在
-    if not os.path.exists(requirement.file_path):
+    resolved_file_path = resolve_file_path(requirement.file_path)
+    if not resolved_file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
     # 对中文文件名进行 URL 编码
@@ -460,7 +469,7 @@ def download_requirement(
 
     # 返回文件
     response = FileResponse(
-        path=requirement.file_path,
+        path=str(resolved_file_path),
         media_type='application/octet-stream'
     )
 
@@ -494,8 +503,9 @@ def delete_requirement(
         raise HTTPException(status_code=404, detail="Requirement not found")
 
     # 删除文件
-    if os.path.exists(requirement.file_path):
-        os.remove(requirement.file_path)
+    resolved_file_path = resolve_file_path(requirement.file_path)
+    if resolved_file_path.exists():
+        os.remove(resolved_file_path)
 
     db.delete(requirement)
     db.commit()
