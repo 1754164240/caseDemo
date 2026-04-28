@@ -60,7 +60,7 @@ def run_migration(sql_file: str):
                             pass
 
                 trans.commit()
-                print("✅迁移成功完成!")
+                print("迁移成功完成!")
                 return True
 
             except Exception as exc:

@@ -23,6 +23,7 @@ from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.services.document_parser import DocumentParser
 from app.services.automation_service import get_automation_service
+from app.services.workflow_task_cleanup import detach_workflow_tasks_from_test_cases
 
 router = APIRouter()
 
@@ -289,7 +290,8 @@ def delete_test_case(
     
     if not test_case:
         raise HTTPException(status_code=404, detail="Test case not found")
-    
+
+    detach_workflow_tasks_from_test_cases(db, [test_case_id])
     db.delete(test_case)
     db.commit()
 

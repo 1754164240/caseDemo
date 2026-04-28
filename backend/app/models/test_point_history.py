@@ -8,8 +8,8 @@ class TestPointHistory(Base):
     __tablename__ = "test_point_histories"
 
     id = Column(Integer, primary_key=True, index=True)
-    test_point_id = Column(Integer, ForeignKey("test_points.id"), nullable=False, index=True)
-    requirement_id = Column(Integer, ForeignKey("requirements.id"), nullable=False, index=True)
+    test_point_id = Column(Integer, ForeignKey("test_points.id", ondelete="CASCADE"), nullable=False, index=True)
+    requirement_id = Column(Integer, ForeignKey("requirements.id", ondelete="CASCADE"), nullable=False, index=True)
     version = Column(String(50), nullable=False, index=True)
     code = Column(String(20))
     title = Column(String(200))

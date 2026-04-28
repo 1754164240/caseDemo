@@ -21,11 +21,14 @@ from app.services.document_embedding_service import document_embedding_service
 from app.services.ai_service import get_ai_service
 from app.services.websocket_service import manager
 from app.models.test_point import TestPoint
+from app.models.test_case import TestCase
+from app.models.test_point_history import TestPointHistory
 from app.services.milvus_service import milvus_service
 from app.services.test_point_history_service import (
     allocate_requirement_version,
     record_history_entry,
 )
+from app.services.workflow_task_cleanup import detach_workflow_tasks_from_test_cases
 from sqlalchemy import func, or_
 from app.utils.file_paths import build_upload_file_path, resolve_file_path
 
@@ -160,36 +163,16 @@ def process_requirement_background(
                 "[WARNING] 无法基于切分构建上下文，直接截取原文作为模型输入，可能覆盖不完整"
             )
 
-        # 检查 OpenAI API Key
-        if not settings.OPENAI_API_KEY or settings.OPENAI_API_KEY == "":
-            print("[WARNING] OpenAI API Key 未配置，使用模拟数据")
-            # 使用模拟数据
-            test_points_data = [
-                {
-                    "title": "示例测试点 1",
-                    "description": "这是一个示例测试点（OpenAI API Key 未配置）",
-                    "category": "功能",
-                    "priority": "high"
-                },
-                {
-                    "title": "示例测试点 2",
-                    "description": "请配置 OpenAI API Key 以使用 AI 功能",
-                    "category": "功能",
-                    "priority": "medium"
-                }
-            ]
-        else:
-            # 使用 AI 提取测试点
-            print(f"[INFO] 调用 AI 服务提取测试点...")
-            ai_service = get_ai_service(db)
-            try:
-                test_points_data = ai_service.extract_test_points(
-                    ai_context,
-                    allow_fallback=False,
-                )
-            except Exception as ai_error:
-                raise RuntimeError(f"AI 提取测试点失败: {ai_error}") from ai_error
-            print(f"[INFO] AI 提取完成，测试点数量: {len(test_points_data)}")
+        print(f"[INFO] 调用 AI 服务提取测试点...")
+        ai_service = get_ai_service(db)
+        try:
+            test_points_data = ai_service.extract_test_points(
+                ai_context,
+                allow_fallback=False,
+            )
+        except Exception as ai_error:
+            raise RuntimeError(f"AI 提取测试点失败: {ai_error}") from ai_error
+        print(f"[INFO] AI 提取完成，测试点数量: {len(test_points_data)}")
 
         summary_text = "自动生成（需求上传）"
         version_label = allocate_requirement_version(db, requirement_id)
@@ -506,6 +489,20 @@ def delete_requirement(
     resolved_file_path = resolve_file_path(requirement.file_path)
     if resolved_file_path.exists():
         os.remove(resolved_file_path)
+
+    test_case_ids = [
+        row[0]
+        for row in (
+            db.query(TestCase.id)
+            .join(TestPoint, TestCase.test_point_id == TestPoint.id)
+            .filter(TestPoint.requirement_id == requirement_id)
+            .all()
+        )
+    ]
+    detach_workflow_tasks_from_test_cases(db, test_case_ids)
+    db.query(TestPointHistory).filter(
+        TestPointHistory.requirement_id == requirement_id
+    ).delete(synchronize_session=False)
 
     db.delete(requirement)
     db.commit()

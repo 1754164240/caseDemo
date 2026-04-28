@@ -31,6 +31,7 @@ from app.services.test_point_history_service import (
     allocate_requirement_version,
     record_history_entry,
 )
+from app.services.workflow_task_cleanup import detach_workflow_tasks_for_test_points
 from app.core.config import settings
 
 router = APIRouter()
@@ -243,6 +244,7 @@ def regenerate_test_points_background(
         existing_point_ids = [tp.id for tp in existing_points]
 
         if existing_point_ids:
+            detach_workflow_tasks_for_test_points(db, existing_point_ids)
             db.query(TestCase).filter(TestCase.test_point_id.in_(existing_point_ids)).delete(
                 synchronize_session=False
             )
@@ -330,6 +332,7 @@ def regenerate_test_points_background(
         error_message = str(e).strip() or "重新生成测试点失败，请稍后重试"
 
         try:
+            db.rollback()
             requirement = db.query(Requirement).filter(Requirement.id == requirement_id).first()
             if requirement:
                 requirement.status = RequirementStatus.FAILED
@@ -908,6 +911,10 @@ def delete_test_point(
     if not test_point:
         raise HTTPException(status_code=404, detail="Test point not found")
 
+    detach_workflow_tasks_for_test_points(db, [test_point_id])
+    db.query(TestPointHistory).filter(
+        TestPointHistory.test_point_id == test_point_id
+    ).delete(synchronize_session=False)
     db.delete(test_point)
     db.commit()
 

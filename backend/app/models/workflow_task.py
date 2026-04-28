@@ -16,7 +16,7 @@ class WorkflowTask(Base):
 
     # 关联信息
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    test_case_id = Column(Integer, ForeignKey("test_cases.id"), nullable=True, index=True)
+    test_case_id = Column(Integer, ForeignKey("test_cases.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # 任务状态
     status = Column(String(50), default="pending", index=True)  # pending/processing/reviewing/completed/failed
